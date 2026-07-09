@@ -71,6 +71,9 @@ export default function LibraryPage() {
   const [tagId, setTagId] = useState("");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>("file_modified_at");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(60);
+  const [total, setTotal] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [folderPath, setFolderPath] = useState("");
   const [tagInput, setTagInput] = useState("");
@@ -89,17 +92,23 @@ export default function LibraryPage() {
   );
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  async function loadAssets() {
+  async function loadAssets(nextPage = page, nextPageSize = pageSize) {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
     if (assetType) params.set("type", assetType);
     if (tagId) params.set("tag_id", tagId);
     if (favoriteOnly) params.set("favorite", "true");
+    params.set("page", String(nextPage));
+    params.set("page_size", String(nextPageSize));
     params.set("sort_by", sortBy);
     params.set("sort_order", sortBy === "name" ? "asc" : "desc");
     const result = await apiFetch<AssetList>(`/assets?${params.toString()}`);
     setAssets(result.items);
+    setPage(result.page);
+    setPageSize(result.page_size);
+    setTotal(result.total);
     setSelectedIds((ids) => ids.filter((id) => result.items.some((asset) => asset.id === id)));
   }
 
@@ -112,6 +121,9 @@ export default function LibraryPage() {
         body: JSON.stringify({ query: naturalQuery, limit: 60 }),
       });
       setAssets(result.items);
+      setPage(1);
+      setPageSize(60);
+      setTotal(result.total);
       setMessage(
         `AI 搜索返回 ${result.total} 个候选，关键词：${result.interpreted_keywords.join("、")}`,
       );
@@ -157,7 +169,7 @@ export default function LibraryPage() {
       await loadAssets();
     }, 1800);
     return () => window.clearInterval(timer);
-  }, [activeTask, query, assetType, tagId, favoriteOnly, sortBy]);
+  }, [activeTask, query, assetType, tagId, favoriteOnly, sortBy, page, pageSize]);
 
   useEffect(() => {
     if (!selected) return;
@@ -223,6 +235,18 @@ export default function LibraryPage() {
 
   function selectCurrentPage() {
     setSelectedIds(assets.map((asset) => asset.id));
+  }
+
+  async function searchFromFirstPage() {
+    await loadAssets(1, pageSize);
+  }
+
+  async function changePageSize(value: number) {
+    await loadAssets(1, value);
+  }
+
+  async function goToPage(value: number) {
+    await loadAssets(Math.min(Math.max(value, 1), totalPages), pageSize);
   }
 
   async function batchUpdate(
@@ -441,7 +465,7 @@ export default function LibraryPage() {
         <button className="button secondary" onClick={() => setViewMode("list")}>
           列表
         </button>
-        <button className="button" onClick={() => void loadAssets()}>
+        <button className="button" onClick={() => void searchFromFirstPage()}>
           搜索
         </button>
         <button className="button secondary" onClick={() => void cleanupAssets()}>
@@ -533,6 +557,36 @@ export default function LibraryPage() {
 
       {message ? <p className="asset-sub">{message}</p> : null}
       {error ? <p className="asset-sub">{error}</p> : null}
+
+      <div className="toolbar pagination-toolbar">
+        <span className="asset-sub">
+          共 {total} 个素材，第 {page} / {totalPages} 页
+        </span>
+        <button
+          className="button secondary"
+          disabled={page <= 1}
+          onClick={() => void goToPage(page - 1)}
+        >
+          上一页
+        </button>
+        <button
+          className="button secondary"
+          disabled={page >= totalPages}
+          onClick={() => void goToPage(page + 1)}
+        >
+          下一页
+        </button>
+        <select
+          className="select"
+          value={pageSize}
+          onChange={(event) => void changePageSize(Number(event.target.value))}
+        >
+          <option value={30}>每页 30</option>
+          <option value={60}>每页 60</option>
+          <option value={120}>每页 120</option>
+          <option value={200}>每页 200</option>
+        </select>
+      </div>
 
       <div className="content-grid">
         <section>

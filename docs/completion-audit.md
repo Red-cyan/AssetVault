@@ -35,7 +35,7 @@
 | --- | --- | --- | --- |
 | 用户系统 | 已完成 | `auth.py`、`users.py`、登录页、设置页用户资料 | 支持注册、登录、JWT、当前用户、资料更新、密码修改 |
 | 素材库 | 已完成 | `folders.py`、`asset_scanner.py`、素材库页 | 支持添加目录、扫描、移除目录配置、索引素材 |
-| 文件浏览 | 已完成 | `library/page.tsx`、`assets.py` | 支持列表/网格、分页、搜索、类型过滤、排序 |
+| 文件浏览 | 已完成 | `library/page.tsx`、`assets.py` | 支持列表/网格、分页、每页数量、搜索、类型过滤、排序 |
 | 标签系统 | 已完成 | `tags.py`、`assets/{id}/tags`、标签管理页 | 支持多标签、创建、改名、颜色、删除、绑定和筛选 |
 | 搜索 | 已完成 | `assets.py`、`search.py`、`search_service.py` | 支持普通搜索和自然语言搜索 |
 | 文件详情 | 已完成 | `library/page.tsx`、`AssetDetail` | 展示路径、大小、格式、缩略图、标签、备注等 |
