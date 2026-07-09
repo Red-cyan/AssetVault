@@ -113,6 +113,15 @@ export type AppSettings = {
   thumbnail_quality: number;
 };
 
+export type UserProfile = {
+  id: string;
+  username: string;
+  email: string | null;
+  display_name: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
 export type AiConnectionTestResult = {
   configured: boolean;
   message: string;

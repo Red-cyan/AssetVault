@@ -9,6 +9,7 @@ import {
   AppSettings,
   DatabaseBackupResult,
   getToken,
+  UserProfile,
 } from "@/lib/api";
 
 function formatSize(value: number) {
@@ -21,7 +22,10 @@ function formatSize(value: number) {
 export default function SettingsPage() {
   const router = useRouter();
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [aiApiKey, setAiApiKey] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [backup, setBackup] = useState<DatabaseBackupResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,8 +35,11 @@ export default function SettingsPage() {
       router.push("/login");
       return;
     }
-    apiFetch<AppSettings>("/settings")
-      .then(setSettings)
+    Promise.all([apiFetch<AppSettings>("/settings"), apiFetch<UserProfile>("/auth/me")])
+      .then(([settingsResult, profileResult]) => {
+        setSettings(settingsResult);
+        setProfile(profileResult);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "加载设置失败"));
   }, [router]);
 
@@ -67,6 +74,46 @@ export default function SettingsPage() {
       setMessage("设置已保存。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存设置失败");
+    }
+  }
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    if (!profile) return;
+    setError(null);
+    setMessage(null);
+    try {
+      const updated = await apiFetch<UserProfile>("/users/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          email: profile.email || null,
+          display_name: profile.display_name || profile.username,
+        }),
+      });
+      setProfile(updated);
+      setMessage("用户资料已保存。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存用户资料失败");
+    }
+  }
+
+  async function changePassword(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+    try {
+      await apiFetch<void>("/users/me/password", {
+        method: "PATCH",
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setMessage("密码已更新，下次登录请使用新密码。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "修改密码失败");
     }
   }
 
@@ -105,10 +152,67 @@ export default function SettingsPage() {
 
       {error ? <p className="asset-sub">{error}</p> : null}
       {message ? <p className="asset-sub">{message}</p> : null}
-      {!settings ? <p className="asset-sub">正在加载设置。</p> : null}
+      {!settings || !profile ? <p className="asset-sub">正在加载设置。</p> : null}
 
-      {settings ? (
-        <form className="stack" onSubmit={saveSettings}>
+      {settings && profile ? (
+        <div className="stack">
+          <form className="panel" onSubmit={saveProfile}>
+            <h2>用户资料</h2>
+            <label className="field">
+              <span className="label">用户名</span>
+              <input className="input" value={profile.username} disabled />
+            </label>
+            <label className="field">
+              <span className="label">显示名称</span>
+              <input
+                className="input"
+                value={profile.display_name ?? ""}
+                onChange={(event) =>
+                  setProfile({ ...profile, display_name: event.target.value })
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="label">邮箱</span>
+              <input
+                className="input"
+                type="email"
+                value={profile.email ?? ""}
+                onChange={(event) => setProfile({ ...profile, email: event.target.value })}
+              />
+            </label>
+            <button className="button" type="submit">
+              保存用户资料
+            </button>
+          </form>
+
+          <form className="panel" onSubmit={changePassword}>
+            <h2>密码安全</h2>
+            <label className="field">
+              <span className="label">当前密码</span>
+              <input
+                className="input"
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">新密码</span>
+              <input
+                className="input"
+                type="password"
+                minLength={6}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+            <button className="button secondary" type="submit">
+              修改密码
+            </button>
+          </form>
+
+          <form className="stack" onSubmit={saveSettings}>
           <section className="panel">
             <h2>基础设置</h2>
             <label className="field">
@@ -211,6 +315,7 @@ export default function SettingsPage() {
             ) : null}
           </section>
         </form>
+        </div>
       ) : null}
     </AppShell>
   );

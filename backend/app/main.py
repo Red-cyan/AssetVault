@@ -14,6 +14,7 @@ from backend.app.api.v1 import (
     tags,
     tasks,
     trash,
+    users,
 )
 from backend.app.api.v1 import settings as settings_api
 from backend.app.core.config import get_settings
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(auth.router, prefix=settings.api_v1_prefix)
+    app.include_router(users.router, prefix=settings.api_v1_prefix)
     app.include_router(folders.router, prefix=settings.api_v1_prefix)
     app.include_router(assets.router, prefix=settings.api_v1_prefix)
     app.include_router(ai.router, prefix=settings.api_v1_prefix)

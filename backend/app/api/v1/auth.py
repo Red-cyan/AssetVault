@@ -16,9 +16,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]) -> User:
-    exists = db.scalar(
-        select(User).where(or_(User.username == payload.username, User.email == payload.email))
-    )
+    conditions = [User.username == payload.username]
+    if payload.email is not None:
+        conditions.append(User.email == payload.email)
+    exists = db.scalar(select(User).where(or_(*conditions)))
     if exists:
         raise HTTPException(status_code=409, detail="Username or email already exists")
     user = User(

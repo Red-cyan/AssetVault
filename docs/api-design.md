@@ -72,6 +72,48 @@ GET /api/v1/auth/me
 - 获取当前登录用户信息。
 - 前端可用于判断 token 是否有效。
 
+### 更新用户资料
+
+```http
+PATCH /api/v1/users/me
+```
+
+字段：
+
+```json
+{
+  "display_name": "AssetVault Demo",
+  "email": "demo@example.com"
+}
+```
+
+说明：
+
+- 用户名不可直接修改，避免影响登录标识。
+- 邮箱需要保持唯一。
+- 邮箱可以为空，适合本地单机演示场景。
+
+### 修改密码
+
+```http
+PATCH /api/v1/users/me/password
+```
+
+字段：
+
+```json
+{
+  "current_password": "old-password",
+  "new_password": "new-password"
+}
+```
+
+说明：
+
+- 必须校验当前密码。
+- 新密码会重新哈希后保存。
+- 修改成功返回 `204 No Content`。
+
 ## 4. 素材目录
 
 ### 获取目录列表

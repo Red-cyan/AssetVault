@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserRead(BaseModel):
@@ -12,3 +12,13 @@ class UserRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserUpdate(BaseModel):
+    email: EmailStr | None = None
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6, max_length=128)

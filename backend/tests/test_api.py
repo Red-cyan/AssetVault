@@ -60,6 +60,75 @@ def test_auth_and_stats_overview(client: TestClient) -> None:
     assert data["type_stats"] == []
 
 
+def test_multiple_users_can_register_without_email(client: TestClient) -> None:
+    first = client.post(
+        "/api/v1/auth/register",
+        json={"username": "demo-a", "password": "assetvault"},
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/api/v1/auth/register",
+        json={"username": "demo-b", "password": "assetvault"},
+    )
+    assert second.status_code == 201
+
+
+def test_user_profile_and_password_can_be_updated(client: TestClient) -> None:
+    headers = register_and_login(client)
+
+    response = client.patch(
+        "/api/v1/users/me",
+        headers=headers,
+        json={"display_name": "AssetVault Demo", "email": "demo@example.com"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["display_name"] == "AssetVault Demo"
+    assert data["email"] == "demo@example.com"
+
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "other",
+            "password": "assetvault",
+            "email": "other@example.com",
+        },
+    )
+    response = client.patch(
+        "/api/v1/users/me",
+        headers=headers,
+        json={"email": "other@example.com"},
+    )
+    assert response.status_code == 409
+
+    response = client.patch(
+        "/api/v1/users/me/password",
+        headers=headers,
+        json={"current_password": "wrong-password", "new_password": "new-assetvault"},
+    )
+    assert response.status_code == 400
+
+    response = client.patch(
+        "/api/v1/users/me/password",
+        headers=headers,
+        json={"current_password": "assetvault", "new_password": "new-assetvault"},
+    )
+    assert response.status_code == 204
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "demo", "password": "assetvault"},
+    )
+    assert response.status_code == 401
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "demo", "password": "new-assetvault"},
+    )
+    assert response.status_code == 200
+
+
 def test_project_can_reference_asset(client: TestClient) -> None:
     headers = register_and_login(client)
     db = next(app.dependency_overrides[get_db]())
