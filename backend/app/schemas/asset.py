@@ -14,6 +14,7 @@ class AssetRead(BaseModel):
     path: str
     size_bytes: int
     mime_type: str | None
+    file_hash: str | None
     thumbnail_path: str | None
     thumbnail_url: str | None
     description: str | None
@@ -49,3 +50,17 @@ class AssetListResponse(BaseModel):
 class AssetCleanupResponse(BaseModel):
     excluded_removed: int
     missing_removed: int
+
+
+class DuplicateAssetGroup(BaseModel):
+    file_hash: str
+    size_bytes: int
+    count: int
+    items: list[AssetRead]
+
+
+class DuplicateAssetResponse(BaseModel):
+    groups: list[DuplicateAssetGroup]
+    total_groups: int
+    total_assets: int
+    hashed_assets: int

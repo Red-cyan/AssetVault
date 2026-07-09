@@ -7,11 +7,13 @@ from backend.app.api.v1 import api_router
 from backend.app.core.config import get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import engine
+from backend.app.services.schema_service import ensure_runtime_schema
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema(engine)
 
     app = FastAPI(title=settings.app_name)
     app.add_middleware(

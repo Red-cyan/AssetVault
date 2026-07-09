@@ -26,6 +26,7 @@ class Asset(Base):
     path: Mapped[str] = mapped_column(Text)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     mime_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    file_hash: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     thumbnail_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     author: Mapped[str | None] = mapped_column(String(120), nullable=True)

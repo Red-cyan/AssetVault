@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -207,3 +208,53 @@ def test_natural_language_search_returns_semantic_matches(client: TestClient) ->
     assert data["total"] >= 1
     assert data["items"][0]["name"] == "concert_stage.glb"
     assert "舞台" in data["interpreted_keywords"]
+
+
+def test_duplicate_detection_groups_same_content_files(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    headers = register_and_login(client)
+    first = tmp_path / "stage-a.glb"
+    second = tmp_path / "stage-b.glb"
+    first.write_bytes(b"same model content")
+    second.write_bytes(b"same model content")
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        db.add_all(
+            [
+                Asset(
+                    user_id=user_id,
+                    name="stage-a.glb",
+                    stem="stage-a",
+                    extension="glb",
+                    asset_type="model",
+                    path=str(first),
+                    size_bytes=first.stat().st_size,
+                ),
+                Asset(
+                    user_id=user_id,
+                    name="stage-b.glb",
+                    stem="stage-b",
+                    extension="glb",
+                    asset_type="model",
+                    path=str(second),
+                    size_bytes=second.stat().st_size,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/assets/duplicates", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_groups"] == 1
+    assert data["total_assets"] == 2
+    assert {item["name"] for item in data["groups"][0]["items"]} == {
+        "stage-a.glb",
+        "stage-b.glb",
+    }

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.models import Asset, AssetTag, Folder, Task
 from backend.app.services.file_type_service import get_asset_type
+from backend.app.services.hash_service import calculate_file_fingerprint
 from backend.app.services.thumbnail_service import (
     generate_image_thumbnail,
     generate_video_thumbnail,
@@ -107,6 +108,7 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
         asset.asset_type = asset_type or "other"
         asset.size_bytes = stat.st_size
         asset.mime_type = guess_type(path.name)[0]
+        asset.file_hash = calculate_file_fingerprint(path)
         asset.file_created_at = datetime.fromtimestamp(stat.st_ctime)
         asset.file_modified_at = datetime.fromtimestamp(stat.st_mtime)
         asset.indexed_at = datetime.utcnow()

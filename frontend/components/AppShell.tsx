@@ -8,6 +8,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         <nav className="nav">
           <Link href="/library">素材库</Link>
           <Link href="/projects">项目</Link>
+          <Link href="/duplicates">重复检测</Link>
           <Link href="/stats">统计</Link>
           <Link href="/settings">设置</Link>
         </nav>

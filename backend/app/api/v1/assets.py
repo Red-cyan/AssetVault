@@ -14,9 +14,11 @@ from backend.app.schemas.asset import (
     AssetListResponse,
     AssetRead,
     AssetUpdate,
+    DuplicateAssetResponse,
 )
 from backend.app.schemas.tag import AssetTagsUpdate, TagRead
 from backend.app.services.asset_scanner import cleanup_excluded_assets, cleanup_missing_assets
+from backend.app.services.duplicate_service import find_duplicate_groups, refresh_missing_hashes
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -91,6 +93,22 @@ def cleanup_assets(
     return AssetCleanupResponse(
         excluded_removed=excluded_removed,
         missing_removed=missing_removed,
+    )
+
+
+@router.get("/duplicates", response_model=DuplicateAssetResponse)
+def list_duplicate_assets(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> DuplicateAssetResponse:
+    refresh_missing_hashes(db, user_id=current_user.id)
+    groups, hashed_assets = find_duplicate_groups(db, user_id=current_user.id)
+    total_assets = sum(group["count"] for group in groups)
+    return DuplicateAssetResponse(
+        groups=groups,
+        total_groups=len(groups),
+        total_assets=total_assets,
+        hashed_assets=hashed_assets,
     )
 
 

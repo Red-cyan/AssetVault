@@ -8,6 +8,7 @@ export type Asset = {
   asset_type: string;
   path: string;
   size_bytes: number;
+  file_hash: string | null;
   thumbnail_path: string | null;
   thumbnail_url: string | null;
   description: string | null;
@@ -132,6 +133,20 @@ export type NaturalLanguageSearchResult = {
   query: string;
   interpreted_keywords: string[];
   mode: string;
+};
+
+export type DuplicateAssetGroup = {
+  file_hash: string;
+  size_bytes: number;
+  count: number;
+  items: Asset[];
+};
+
+export type DuplicateAssetResponse = {
+  groups: DuplicateAssetGroup[];
+  total_groups: number;
+  total_assets: number;
+  hashed_assets: number;
 };
 
 export function getToken() {
