@@ -3,14 +3,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
-from backend.app.models import Asset
+from backend.app.models import Asset, AssetTag, Tag
 from backend.app.services.file_type_service import get_asset_type
 
 
@@ -434,6 +434,78 @@ def test_asset_trash_lifecycle(client: TestClient) -> None:
     assert response.status_code == 204
 
     response = client.get("/api/v1/trash/assets", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+
+def test_assets_can_be_updated_in_batch(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        assets = [
+            Asset(
+                user_id=user_id,
+                name="stage-a.glb",
+                stem="stage-a",
+                extension="glb",
+                asset_type="model",
+                path="E:/assets/stage-a.glb",
+                size_bytes=1024,
+            ),
+            Asset(
+                user_id=user_id,
+                name="stage-b.glb",
+                stem="stage-b",
+                extension="glb",
+                asset_type="model",
+                path="E:/assets/stage-b.glb",
+                size_bytes=2048,
+            ),
+        ]
+        db.add_all(assets)
+        db.commit()
+        asset_ids = []
+        for asset in assets:
+            db.refresh(asset)
+            asset_ids.append(asset.id)
+    finally:
+        db.close()
+
+    response = client.patch(
+        "/api/v1/assets/batch",
+        headers=headers,
+        json={
+            "asset_ids": asset_ids,
+            "is_favorite": True,
+            "tag_names": ["舞台", "演唱会"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["matched_count"] == 2
+    assert response.json()["updated_count"] == 2
+    assert response.json()["tagged_count"] == 4
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        stored_assets = list(db.scalars(select(Asset).where(Asset.id.in_(asset_ids))))
+        assert all(asset.is_favorite for asset in stored_assets)
+        tags = list(db.scalars(select(Tag).where(Tag.name.in_(["舞台", "演唱会"]))))
+        assert {tag.name for tag in tags} == {"舞台", "演唱会"}
+        link_count = db.query(AssetTag).filter(AssetTag.asset_id.in_(asset_ids)).count()
+        assert link_count == 4
+    finally:
+        db.close()
+
+    response = client.patch(
+        "/api/v1/assets/batch",
+        headers=headers,
+        json={"asset_ids": asset_ids, "move_to_trash": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["trashed_count"] == 2
+
+    response = client.get("/api/v1/assets", headers=headers)
     assert response.status_code == 200
     assert response.json()["total"] == 0
 

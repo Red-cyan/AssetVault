@@ -14,6 +14,7 @@ import {
   Tag,
   Task,
   AssetCleanupResult,
+  AssetBatchUpdateResult,
   AiAnalyzeResult,
   NaturalLanguageSearchResult,
   TrashSummary,
@@ -52,6 +53,7 @@ export default function LibraryPage() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<AssetDetail | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [naturalQuery, setNaturalQuery] = useState("");
   const [assetType, setAssetType] = useState("");
@@ -61,6 +63,7 @@ export default function LibraryPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [folderPath, setFolderPath] = useState("");
   const [tagInput, setTagInput] = useState("");
+  const [bulkTagInput, setBulkTagInput] = useState("");
   const [description, setDescription] = useState("");
   const [author, setAuthor] = useState("");
   const [rating, setRating] = useState(0);
@@ -72,6 +75,8 @@ export default function LibraryPage() {
     [tasks],
   );
 
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
   async function loadAssets() {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
@@ -82,6 +87,7 @@ export default function LibraryPage() {
     params.set("sort_order", sortBy === "name" ? "asc" : "desc");
     const result = await apiFetch<AssetList>(`/assets?${params.toString()}`);
     setAssets(result.items);
+    setSelectedIds((ids) => ids.filter((id) => result.items.some((asset) => asset.id === id)));
   }
 
   async function runNaturalSearch() {
@@ -176,6 +182,62 @@ export default function LibraryPage() {
     const detail = await apiFetch<AssetDetail>(`/assets/${asset.id}`);
     setSelected(detail);
     await apiFetch(`/assets/${asset.id}/open`, { method: "POST" });
+  }
+
+  function toggleAssetSelection(assetId: string) {
+    setSelectedIds((ids) =>
+      ids.includes(assetId) ? ids.filter((id) => id !== assetId) : [...ids, assetId],
+    );
+  }
+
+  function selectCurrentPage() {
+    setSelectedIds(assets.map((asset) => asset.id));
+  }
+
+  async function batchUpdate(
+    payload: Partial<{
+      is_favorite: boolean;
+      tag_names: string[];
+      move_to_trash: boolean;
+    }>,
+  ) {
+    if (selectedIds.length === 0) {
+      setError("请先选择素材。");
+      return;
+    }
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await apiFetch<AssetBatchUpdateResult>("/assets/batch", {
+        method: "PATCH",
+        body: JSON.stringify({ asset_ids: selectedIds, ...payload }),
+      });
+      await loadTags();
+      await loadAssets();
+      if (payload.move_to_trash) {
+        setSelected(null);
+        setSelectedIds([]);
+      }
+      setMessage(
+        `批量操作完成：匹配 ${result.matched_count} 个，更新 ${result.updated_count} 个，新增标签关联 ${result.tagged_count} 个，移入回收站 ${result.trashed_count} 个。`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "批量操作失败");
+    }
+  }
+
+  async function batchAddTags(event: FormEvent) {
+    event.preventDefault();
+    const tagNames = bulkTagInput
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (tagNames.length === 0) {
+      setError("请输入要添加的标签。");
+      return;
+    }
+    await batchUpdate({ tag_names: tagNames });
+    setBulkTagInput("");
   }
 
   async function addTags(event: FormEvent) {
@@ -331,6 +393,36 @@ export default function LibraryPage() {
         </button>
       </div>
 
+      <div className="toolbar batch-toolbar">
+        <span className="asset-sub">已选择 {selectedIds.length} 个素材</span>
+        <button className="button secondary" onClick={selectCurrentPage}>
+          选择当前页
+        </button>
+        <button className="button secondary" onClick={() => setSelectedIds([])}>
+          清空选择
+        </button>
+        <button className="button secondary" onClick={() => void batchUpdate({ is_favorite: true })}>
+          批量收藏
+        </button>
+        <button className="button secondary" onClick={() => void batchUpdate({ is_favorite: false })}>
+          取消收藏
+        </button>
+        <button className="button secondary" onClick={() => void batchUpdate({ move_to_trash: true })}>
+          移入回收站
+        </button>
+        <form className="inline-form" onSubmit={batchAddTags}>
+          <input
+            className="input"
+            placeholder="批量添加标签，逗号分隔"
+            value={bulkTagInput}
+            onChange={(event) => setBulkTagInput(event.target.value)}
+          />
+          <button className="button" type="submit">
+            批量打标签
+          </button>
+        </form>
+      </div>
+
       <div className="toolbar">
         <input
           className="input"
@@ -365,42 +457,63 @@ export default function LibraryPage() {
               {assets.map((asset) => {
                 const thumb = thumbnailSrc(asset);
                 return (
-                  <button className="asset-card" key={asset.id} onClick={() => selectAsset(asset)}>
-                    <div className="thumb">
-                      {thumb ? <img alt="" src={thumb} /> : asset.extension.toUpperCase()}
-                    </div>
-                    <div className="asset-meta">
-                      <div className="asset-name" title={asset.name}>
-                        {asset.is_favorite ? "★ " : ""}
-                        {asset.name}
+                  <div
+                    className={`asset-card selectable-card ${
+                      selectedIdSet.has(asset.id) ? "selected" : ""
+                    }`}
+                    key={asset.id}
+                  >
+                    <label className="select-check">
+                      <input
+                        type="checkbox"
+                        checked={selectedIdSet.has(asset.id)}
+                        onChange={() => toggleAssetSelection(asset.id)}
+                      />
+                    </label>
+                    <button className="asset-card-main" onClick={() => selectAsset(asset)}>
+                      <div className="thumb">
+                        {thumb ? <img alt="" src={thumb} /> : asset.extension.toUpperCase()}
                       </div>
-                      <div className="asset-sub">
-                        {asset.asset_type} · {formatSize(asset.size_bytes)}
+                      <div className="asset-meta">
+                        <div className="asset-name" title={asset.name}>
+                          {asset.is_favorite ? "★ " : ""}
+                          {asset.name}
+                        </div>
+                        <div className="asset-sub">
+                          {asset.asset_type} · {formatSize(asset.size_bytes)}
+                        </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
             </div>
           ) : (
             <div className="table">
-              <div className="table-row header">
+              <div className="table-row header batch-table-row">
+                <span>选择</span>
                 <span>名称</span>
                 <span>类型</span>
                 <span>大小</span>
                 <span>修改时间</span>
               </div>
               {assets.map((asset) => (
-                <button
-                  className="table-button table-row"
-                  key={asset.id}
-                  onClick={() => selectAsset(asset)}
-                >
-                  <span className="asset-name">{asset.is_favorite ? "★ " : ""}{asset.name}</span>
+                <div className="table-row batch-table-row" key={asset.id}>
+                  <span>
+                    <input
+                      type="checkbox"
+                      checked={selectedIdSet.has(asset.id)}
+                      onChange={() => toggleAssetSelection(asset.id)}
+                    />
+                  </span>
+                  <button className="table-link" onClick={() => selectAsset(asset)}>
+                    {asset.is_favorite ? "★ " : ""}
+                    {asset.name}
+                  </button>
                   <span>{asset.asset_type}</span>
                   <span>{formatSize(asset.size_bytes)}</span>
                   <span>{formatDate(asset.file_modified_at)}</span>
-                </button>
+                </div>
               ))}
             </div>
           )}

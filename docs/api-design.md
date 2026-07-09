@@ -260,6 +260,35 @@ POST /api/v1/assets/{asset_id}/tags
 - 传入已有 `tag_ids`。
 - 传入 `tag_names`，不存在的标签由后端创建。
 
+### 批量更新素材
+
+```http
+PATCH /api/v1/assets/batch
+```
+
+请求示例：
+
+```json
+{
+  "asset_ids": ["asset-a", "asset-b"],
+  "is_favorite": true,
+  "tag_names": ["舞台", "演唱会"],
+  "move_to_trash": false
+}
+```
+
+用途：
+
+- 批量收藏或取消收藏。
+- 批量添加标签。
+- 批量移入回收站。
+
+设计说明：
+
+- 只会操作当前用户、未删除的素材。
+- 批量打标签会复用已有标签，不存在的标签由后端创建。
+- 批量移入回收站仍然只是软删除数据库索引，不删除磁盘文件。
+
 ### 移入回收站
 
 ```http

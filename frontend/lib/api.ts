@@ -67,6 +67,13 @@ export type AssetCleanupResult = {
   missing_removed: number;
 };
 
+export type AssetBatchUpdateResult = {
+  matched_count: number;
+  updated_count: number;
+  tagged_count: number;
+  trashed_count: number;
+};
+
 export type StatsOverview = {
   total_assets: number;
   total_size_bytes: number;

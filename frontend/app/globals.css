@@ -132,6 +132,50 @@ a {
 
 .asset-card {
   overflow: hidden;
+  position: relative;
+}
+
+.asset-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.asset-card-main {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: block;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.select-check {
+  border-radius: 6px;
+  background: rgb(255 255 255 / 88%);
+  left: 8px;
+  padding: 4px;
+  position: absolute;
+  top: 8px;
+  z-index: 1;
+}
+
+.batch-toolbar {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.inline-form {
+  align-items: center;
+  display: flex;
+  flex: 1 1 320px;
+  gap: 8px;
+}
+
+.inline-form .input {
+  min-width: 220px;
 }
 
 .thumb {
@@ -228,6 +272,22 @@ a {
   background: transparent;
   color: inherit;
   width: 100%;
+}
+
+.batch-table-row {
+  grid-template-columns: 56px minmax(220px, 1fr) 90px 110px 150px;
+}
+
+.table-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-list,

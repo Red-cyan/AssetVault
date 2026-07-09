@@ -9,6 +9,8 @@ from backend.app.api.deps import get_current_user
 from backend.app.db.session import get_db
 from backend.app.models import Asset, AssetTag, Tag, User
 from backend.app.schemas.asset import (
+    AssetBatchUpdate,
+    AssetBatchUpdateResponse,
     AssetCleanupResponse,
     AssetDetail,
     AssetListResponse,
@@ -30,6 +32,38 @@ def serialize_asset_detail(asset: Asset) -> AssetDetail:
     data = AssetRead.model_validate(asset).model_dump()
     data["tags"] = [TagRead.model_validate(link.tag) for link in asset.tags]
     return AssetDetail(**data)
+
+
+def get_owned_active_assets(db: Session, *, user_id: str, asset_ids: list[str]) -> list[Asset]:
+    unique_ids = list(dict.fromkeys(asset_ids))
+    return list(
+        db.scalars(
+            select(Asset).where(
+                Asset.user_id == user_id,
+                Asset.id.in_(unique_ids),
+                Asset.is_deleted.is_(False),
+            )
+        )
+    )
+
+
+def get_or_create_tags(db: Session, *, user_id: str, tag_names: list[str]) -> list[Tag]:
+    names = sorted({name.strip() for name in tag_names if name.strip()})
+    if not names:
+        return []
+    existing_tags = list(
+        db.scalars(select(Tag).where(Tag.user_id == user_id, Tag.name.in_(names)))
+    )
+    existing_names = {tag.name for tag in existing_tags}
+    created_tags: list[Tag] = []
+    for name in names:
+        if name in existing_names:
+            continue
+        tag = Tag(user_id=user_id, name=name)
+        db.add(tag)
+        created_tags.append(tag)
+    db.flush()
+    return existing_tags + created_tags
 
 
 @router.get("", response_model=AssetListResponse)
@@ -90,6 +124,57 @@ def list_assets(
     total = db.scalar(count_stmt) or 0
     items = list(db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)))
     return AssetListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.patch("/batch", response_model=AssetBatchUpdateResponse)
+def batch_update_assets(
+    payload: AssetBatchUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> AssetBatchUpdateResponse:
+    assets = get_owned_active_assets(db, user_id=current_user.id, asset_ids=payload.asset_ids)
+    if not assets:
+        raise HTTPException(status_code=404, detail="No matching assets found")
+
+    updated_count = 0
+    tagged_count = 0
+    trashed_count = 0
+
+    if payload.is_favorite is not None:
+        for asset in assets:
+            asset.is_favorite = payload.is_favorite
+        updated_count = len(assets)
+
+    tags = get_or_create_tags(db, user_id=current_user.id, tag_names=payload.tag_names)
+    if tags:
+        asset_ids = [asset.id for asset in assets]
+        existing_pairs = {
+            (asset_id, tag_id)
+            for asset_id, tag_id in db.execute(
+                select(AssetTag.asset_id, AssetTag.tag_id).where(AssetTag.asset_id.in_(asset_ids))
+            )
+        }
+        for asset in assets:
+            for tag in tags:
+                if (asset.id, tag.id) not in existing_pairs:
+                    db.add(AssetTag(asset_id=asset.id, tag_id=tag.id))
+                    tagged_count += 1
+
+    if payload.move_to_trash:
+        now = datetime.utcnow()
+        for asset in assets:
+            asset.is_deleted = True
+            asset.deleted_at = now
+        trashed_count = len(assets)
+        updated_count = max(updated_count, trashed_count)
+
+    db.commit()
+    return AssetBatchUpdateResponse(
+        matched_count=len(assets),
+        updated_count=updated_count,
+        tagged_count=tagged_count,
+        trashed_count=trashed_count,
+    )
 
 
 @router.post("/cleanup", response_model=AssetCleanupResponse)
@@ -220,20 +305,13 @@ def update_asset_tags(
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    tags: list[Tag] = []
+    tags = get_or_create_tags(db, user_id=current_user.id, tag_names=payload.tag_names)
     if payload.tag_ids:
         tags.extend(
             db.scalars(
                 select(Tag).where(Tag.user_id == current_user.id, Tag.id.in_(payload.tag_ids))
             )
         )
-    for name in {item.strip() for item in payload.tag_names if item.strip()}:
-        tag = db.scalar(select(Tag).where(Tag.user_id == current_user.id, Tag.name == name))
-        if tag is None:
-            tag = Tag(user_id=current_user.id, name=name)
-            db.add(tag)
-            db.flush()
-        tags.append(tag)
 
     existing_tag_ids = {link.tag_id for link in asset.tags}
     for tag in tags:

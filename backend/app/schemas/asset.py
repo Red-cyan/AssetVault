@@ -44,6 +44,20 @@ class AssetUpdate(BaseModel):
     is_favorite: bool | None = None
 
 
+class AssetBatchUpdate(BaseModel):
+    asset_ids: list[str] = Field(min_length=1, max_length=500)
+    is_favorite: bool | None = None
+    tag_names: list[str] = Field(default_factory=list)
+    move_to_trash: bool = False
+
+
+class AssetBatchUpdateResponse(BaseModel):
+    matched_count: int
+    updated_count: int
+    tagged_count: int
+    trashed_count: int
+
+
 class AssetListResponse(BaseModel):
     items: list[AssetRead]
     total: int
