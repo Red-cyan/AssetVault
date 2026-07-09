@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.deps import get_current_user
 from backend.app.db.session import get_db
 from backend.app.models import Tag, User
-from backend.app.schemas.tag import TagCreate, TagRead
+from backend.app.schemas.tag import TagCreate, TagRead, TagUpdate
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -34,3 +34,41 @@ def create_tag(
     db.commit()
     db.refresh(tag)
     return tag
+
+
+@router.patch("/{tag_id}", response_model=TagRead)
+def update_tag(
+    tag_id: str,
+    payload: TagUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Tag:
+    tag = db.get(Tag, tag_id)
+    if tag is None or tag.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] != tag.name:
+        exists = db.scalar(
+            select(Tag).where(Tag.user_id == current_user.id, Tag.name == data["name"])
+        )
+        if exists is not None:
+            raise HTTPException(status_code=409, detail="Tag already exists")
+        tag.name = data["name"]
+    if "color" in data:
+        tag.color = data["color"]
+    db.commit()
+    db.refresh(tag)
+    return tag
+
+
+@router.delete("/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_tag(
+    tag_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    tag = db.get(Tag, tag_id)
+    if tag is None or tag.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    db.delete(tag)
+    db.commit()

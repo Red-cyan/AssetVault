@@ -278,6 +278,10 @@ a {
   grid-template-columns: 56px minmax(220px, 1fr) 90px 110px 150px;
 }
 
+.tag-table-row {
+  grid-template-columns: 120px minmax(180px, 1fr) 90px 110px 150px;
+}
+
 .table-link {
   border: 0;
   background: transparent;
@@ -375,6 +379,13 @@ a {
   color: #1d4ed8;
   font-size: 12px;
   padding: 4px 8px;
+}
+
+.color-swatch {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 28px;
+  width: 28px;
 }
 
 .detail-actions {
