@@ -98,6 +98,21 @@ export type ProjectDetail = Project & {
   }>;
 };
 
+export type AppSettings = {
+  cache_dir: string;
+  theme: string;
+  ai_base_url: string;
+  ai_api_key_configured: boolean;
+  ai_chat_model: string;
+  ai_embedding_model: string;
+  thumbnail_quality: number;
+};
+
+export type AiConnectionTestResult = {
+  configured: boolean;
+  message: string;
+};
+
 export function getToken() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("assetvault_token");

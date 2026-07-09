@@ -97,3 +97,34 @@ def test_project_can_reference_asset(client: TestClient) -> None:
     assert detail["asset_count"] == 1
     assert detail["assets"][0]["role"] == "stage"
     assert detail["assets"][0]["asset"]["name"] == "stage.glb"
+
+
+def test_settings_can_be_updated(client: TestClient) -> None:
+    headers = register_and_login(client)
+
+    response = client.get("/api/v1/settings", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["theme"] == "system"
+    assert response.json()["ai_api_key_configured"] is False
+
+    response = client.patch(
+        "/api/v1/settings",
+        headers=headers,
+        json={
+            "theme": "dark",
+            "cache_dir": "E:/AssetVault/cache",
+            "ai_api_key": "sk-test",
+            "ai_chat_model": "gpt-4o-mini",
+            "thumbnail_quality": 90,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["theme"] == "dark"
+    assert data["cache_dir"] == "E:/AssetVault/cache"
+    assert data["ai_api_key_configured"] is True
+    assert data["thumbnail_quality"] == 90
+
+    response = client.post("/api/v1/settings/test-ai", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["configured"] is True
