@@ -1,0 +1,637 @@
+# AssetVault API 设计说明
+
+本文档用于说明 AssetVault 后端 API 的领域划分、鉴权方式、核心接口和典型业务流程。它不是 OpenAPI 自动导出的字段全集，而是面向开发和面试讲解的设计文档。
+
+## 1. API 总体原则
+
+AssetVault 后端采用 FastAPI 提供 REST API，统一前缀为：
+
+```text
+/api/v1
+```
+
+设计原则：
+
+- 按业务领域拆分路由，而不是按前端页面拆分。
+- 所有用户数据都通过 JWT 绑定当前用户，避免跨用户访问。
+- 文件本体不上传、不移动、不删除，API 只维护数据库索引和元数据。
+- 扫描、检测、备份、AI 分析等能力都围绕素材管理闭环展开。
+- 当前使用 SQLite 便于本地演示，接口边界保持为以后迁移 PostgreSQL、Celery、pgvector 留空间。
+
+## 2. 鉴权方式
+
+登录成功后，后端返回 JWT：
+
+```json
+{
+  "access_token": "...",
+  "token_type": "bearer"
+}
+```
+
+前端后续请求统一携带：
+
+```http
+Authorization: Bearer <token>
+```
+
+需要鉴权的接口会通过 `get_current_user` 解析 token，并把查询限制在当前用户的 `user_id` 下。
+
+## 3. 用户与登录
+
+### 注册
+
+```http
+POST /api/v1/auth/register
+```
+
+用途：
+
+- 创建用户账号。
+- 当前演示环境支持 `demo / assetvault` 开发账号。
+
+### 登录
+
+```http
+POST /api/v1/auth/login
+```
+
+用途：
+
+- 校验用户名和密码。
+- 返回 JWT。
+
+### 当前用户
+
+```http
+GET /api/v1/auth/me
+```
+
+用途：
+
+- 获取当前登录用户信息。
+- 前端可用于判断 token 是否有效。
+
+## 4. 素材目录
+
+### 获取目录列表
+
+```http
+GET /api/v1/folders
+```
+
+用途：
+
+- 查看当前用户配置的素材目录。
+
+### 添加目录
+
+```http
+POST /api/v1/folders
+```
+
+关键字段：
+
+```json
+{
+  "path": "E:/Assets/MMD",
+  "name": "MMD 素材"
+}
+```
+
+设计说明：
+
+- 后端会校验目录是否存在。
+- 系统只记录目录路径，不复制目录中的文件。
+
+### 扫描目录
+
+```http
+POST /api/v1/folders/{folder_id}/scan
+```
+
+用途：
+
+- 创建扫描任务。
+- 后端扫描目录，识别支持的文件类型，写入 `assets` 表。
+- 图片会生成缩略图，视频在安装 FFmpeg 时生成缩略图。
+
+返回：
+
+```json
+{
+  "id": "...",
+  "type": "scan",
+  "status": "pending",
+  "progress": 0
+}
+```
+
+### 删除目录
+
+```http
+DELETE /api/v1/folders/{folder_id}
+```
+
+说明：
+
+- 删除的是目录配置，不删除磁盘文件。
+
+## 5. 素材库
+
+### 素材列表
+
+```http
+GET /api/v1/assets
+```
+
+常用查询参数：
+
+```text
+page=1
+page_size=60
+q=stage
+type=model
+tag_id=<tag_id>
+favorite=true
+exists_on_disk=true
+sort_by=file_modified_at
+sort_order=desc
+```
+
+支持排序字段：
+
+- `name`
+- `size_bytes`
+- `file_modified_at`
+- `asset_type`
+- `last_opened_at`
+
+设计说明：
+
+- 查询数据库索引，不实时遍历磁盘。
+- 默认过滤回收站素材。
+- 搜索范围包含名称、路径、扩展名、作者、描述。
+
+### 素材详情
+
+```http
+GET /api/v1/assets/{asset_id}
+```
+
+用途：
+
+- 获取素材元数据、标签、缩略图地址、备注、评分、收藏状态等。
+
+### 更新素材
+
+```http
+PATCH /api/v1/assets/{asset_id}
+```
+
+可更新字段包括：
+
+- `description`
+- `author`
+- `rating`
+- `is_favorite`
+
+### 标记最近打开
+
+```http
+POST /api/v1/assets/{asset_id}/open
+```
+
+用途：
+
+- 更新 `last_opened_at`。
+- 支持前端“最近打开”排序。
+
+### 更新素材标签
+
+```http
+POST /api/v1/assets/{asset_id}/tags
+```
+
+支持两种方式：
+
+- 传入已有 `tag_ids`。
+- 传入 `tag_names`，不存在的标签由后端创建。
+
+### 移入回收站
+
+```http
+DELETE /api/v1/assets/{asset_id}
+```
+
+设计说明：
+
+- 只把数据库索引标记为 `is_deleted=true`。
+- 不删除用户磁盘上的真实文件。
+
+## 6. 标签
+
+### 标签列表
+
+```http
+GET /api/v1/tags
+```
+
+用途：
+
+- 获取当前用户所有标签。
+- 用于素材筛选和详情编辑。
+
+### 创建标签
+
+```http
+POST /api/v1/tags
+```
+
+字段：
+
+```json
+{
+  "name": "舞台",
+  "color": "#60a5fa"
+}
+```
+
+### 删除标签
+
+```http
+DELETE /api/v1/tags/{tag_id}
+```
+
+说明：
+
+- 删除标签会移除素材和标签的关联。
+- 不影响素材本身。
+
+## 7. 搜索
+
+### 普通搜索
+
+```http
+GET /api/v1/search?q=concert
+```
+
+说明：
+
+- 内部复用素材列表查询。
+- 适合名称、路径、备注等关键词搜索。
+
+### 自然语言搜索
+
+```http
+POST /api/v1/search/natural-language
+```
+
+请求示例：
+
+```json
+{
+  "query": "找一个适合演唱会的大舞台",
+  "limit": 10
+}
+```
+
+当前实现：
+
+- 使用本地语义规则解析关键词。
+- 按素材名称、路径、描述、类型等字段评分。
+
+可扩展方向：
+
+- 替换为 Embedding 检索。
+- 使用 PostgreSQL + pgvector 存储向量。
+- 接入 OpenAI Compatible API 生成查询向量。
+
+## 8. AI 分析
+
+### 分析素材
+
+```http
+POST /api/v1/ai/assets/{asset_id}/analyze
+```
+
+用途：
+
+- 为素材生成标签。
+- 为素材生成描述。
+- 写回数据库。
+
+当前实现：
+
+- 使用本地启发式规则，保证离线和面试演示稳定。
+- 设置页已经预留 AI Base URL、API Key、模型名配置。
+
+后续替换方向：
+
+- 图片使用多模态模型生成标签。
+- 模型文件可以先生成预览图，再送入视觉模型。
+- 文本描述和标签写入后参与自然语言搜索。
+
+## 9. 项目管理
+
+### 项目列表
+
+```http
+GET /api/v1/projects
+```
+
+返回项目和引用素材数量。
+
+### 创建项目
+
+```http
+POST /api/v1/projects
+```
+
+字段：
+
+```json
+{
+  "name": "演唱会 Demo",
+  "description": "包含人物、舞台、动作和音乐"
+}
+```
+
+### 项目详情
+
+```http
+GET /api/v1/projects/{project_id}
+```
+
+返回：
+
+- 项目基本信息。
+- 项目引用的素材。
+- 每个引用素材的角色，例如 `character`、`stage`、`motion`、`music`。
+
+### 添加项目素材
+
+```http
+POST /api/v1/projects/{project_id}/assets
+```
+
+请求：
+
+```json
+{
+  "asset_id": "...",
+  "role": "stage"
+}
+```
+
+### 移除项目素材
+
+```http
+DELETE /api/v1/projects/{project_id}/assets/{asset_id}
+```
+
+说明：
+
+- 只删除项目引用关系。
+- 不删除素材索引。
+- 不删除磁盘文件。
+
+### 导出项目清单
+
+```http
+GET /api/v1/projects/{project_id}/export?format=json
+GET /api/v1/projects/{project_id}/export?format=csv
+```
+
+用途：
+
+- 导出项目引用的素材清单。
+- 适合面试演示“一个作品用了哪些素材”。
+- 也适合未来对接 UE5/Blender 打包流程。
+
+导出字段包括：
+
+- 项目名称
+- 素材角色
+- 素材名称
+- 类型
+- 扩展名
+- 文件大小
+- 原始路径
+- 文件指纹
+- 是否仍存在于磁盘
+
+## 10. 重复检测
+
+### 获取重复素材组
+
+```http
+GET /api/v1/assets/duplicates
+```
+
+实现说明：
+
+- 对缺少指纹的素材补算快速文件指纹。
+- 按 `file_hash + size_bytes` 聚合。
+- 返回重复组、重复素材数量、已计算指纹素材数量。
+
+设计取舍：
+
+- 当前优先使用快速指纹，适合 MVP 阶段和大文件场景。
+- 后续可以增加精确 hash 模式。
+
+## 11. 失效素材检查
+
+### 扫描失效素材
+
+```http
+POST /api/v1/assets/missing/scan
+```
+
+用途：
+
+- 检查数据库索引对应的磁盘路径是否仍存在。
+- 如果文件被外部移动或删除，标记为失效。
+- 如果文件恢复，自动恢复 `exists_on_disk` 状态。
+
+### 获取失效素材列表
+
+```http
+GET /api/v1/assets/missing
+```
+
+用途：
+
+- 集中处理已经失效的素材索引。
+
+## 12. 回收站
+
+### 回收站列表
+
+```http
+GET /api/v1/trash/assets
+```
+
+### 恢复素材
+
+```http
+POST /api/v1/trash/assets/{asset_id}/restore
+```
+
+### 永久删除索引
+
+```http
+DELETE /api/v1/trash/assets/{asset_id}
+```
+
+设计说明：
+
+- 回收站中的“永久删除”仍然只删除数据库索引。
+- 不删除磁盘真实文件。
+
+## 13. 统计
+
+### 统计概览
+
+```http
+GET /api/v1/stats/overview
+```
+
+返回内容：
+
+- 素材总数
+- 总容量
+- 收藏数量
+- 标签数量
+- 素材目录数量
+- 最近 7 天新增
+- 类型分布
+- 扩展名排行
+
+用途：
+
+- 支撑前端统计页。
+- 面试时展示系统不是简单列表，而是有运营/管理视角。
+
+## 14. 设置与备份
+
+### 获取设置
+
+```http
+GET /api/v1/settings
+```
+
+### 更新设置
+
+```http
+PATCH /api/v1/settings
+```
+
+设置项包括：
+
+- 缓存目录
+- 主题
+- AI Base URL
+- AI API Key
+- Chat 模型
+- Embedding 模型
+- 缩略图质量
+
+### 测试 AI 配置
+
+```http
+POST /api/v1/settings/test-ai
+```
+
+当前用于检查 AI 配置是否填写完整。后续可以扩展为真实 API 连通性测试。
+
+### 数据库备份
+
+```http
+POST /api/v1/settings/backup-database
+```
+
+用途：
+
+- 复制 SQLite 数据库文件到备份目录。
+- 返回备份路径、大小和创建时间。
+
+## 15. 任务
+
+### 任务详情
+
+```http
+GET /api/v1/tasks/{task_id}
+```
+
+用途：
+
+- 查看扫描任务状态。
+- 前端可以轮询展示进度。
+
+任务状态：
+
+- `pending`
+- `running`
+- `success`
+- `failed`
+- `canceled`
+
+## 16. 错误约定
+
+常见状态码：
+
+- `400`：请求参数或业务前置条件不满足，例如目录不存在、不支持的导出格式。
+- `401`：未登录或 token 无效。
+- `404`：资源不存在，或资源不属于当前用户。
+- `422`：请求体字段校验失败。
+
+设计说明：
+
+- 对于跨用户访问，统一表现为资源不存在，避免暴露其他用户数据是否存在。
+- 对于文件系统操作，优先返回明确的业务错误，例如目录不存在。
+
+## 17. 典型业务流程
+
+### 17.1 首次使用
+
+1. 注册或登录。
+2. 添加素材目录。
+3. 执行目录扫描。
+4. 轮询任务状态。
+5. 进入素材库浏览和搜索。
+
+### 17.2 整理素材
+
+1. 在素材库筛选类型或关键词。
+2. 打开素材详情。
+3. 添加标签、收藏、评分、备注。
+4. 对素材执行 AI 分析。
+5. 使用自然语言搜索验证标签和描述效果。
+
+### 17.3 组织作品项目
+
+1. 创建项目。
+2. 搜索素材。
+3. 按角色加入项目，例如人物、舞台、动作、音乐。
+4. 导出项目清单。
+5. 根据清单检查素材路径和缺失状态。
+
+### 17.4 维护素材库健康
+
+1. 执行重复检测。
+2. 执行失效素材检查。
+3. 对不需要的索引移入回收站。
+4. 必要时恢复或永久删除索引。
+5. 执行数据库备份。
+
+## 18. 后续演进
+
+如果继续做企业级增强，API 层可以按以下方向扩展：
+
+- 增加 Alembic 迁移脚本，替代运行时补 schema。
+- 增加 Celery 任务接口，扫描和 AI 分析不阻塞请求。
+- 增加 OpenAPI 导出文档和 Postman Collection。
+- 增加批量操作接口，例如批量打标签、批量加入项目。
+- 增加素材文件监听接口，用 Watchdog 同步新增、修改和删除。
+- 增加项目导出包接口，为 UE5/Blender 工作流生成素材清单或打包目录。
