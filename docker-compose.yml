@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: assetvault-backend
+    environment:
+      ASSETVAULT_SECRET_KEY: ${ASSETVAULT_SECRET_KEY:-change-me-for-local-compose}
+      ASSETVAULT_DATABASE_URL: sqlite:////app/data/assetvault.db
+      ASSETVAULT_THUMBNAIL_DIR: /app/cache/thumbnails
+    ports:
+      - "8000:8000"
+    volumes:
+      - assetvault-data:/app/data
+      - assetvault-cache:/app/cache
+      - assetvault-backups:/app/backups
+      - ${ASSETVAULT_ASSET_ROOT:-./demo-assets}:/assets:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000/api/v1}
+    container_name: assetvault-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  assetvault-data:
+  assetvault-cache:
+  assetvault-backups:

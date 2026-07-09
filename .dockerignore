@@ -1,0 +1,17 @@
+.git/
+.agents/
+.idea/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+assetvault.db
+cache/
+backups/
+node_modules/
+.next/
+dist/
+build/
+*.log
+.env
