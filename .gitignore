@@ -9,6 +9,7 @@ __pycache__/
 assetvault.db
 cache/
 backups/
+demo-assets/
 node_modules/
 .next/
 dist/

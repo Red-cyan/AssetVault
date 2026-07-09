@@ -11,6 +11,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.models import Asset
+from backend.app.services.file_type_service import get_asset_type
 
 
 @pytest.fixture()
@@ -363,3 +364,8 @@ def test_missing_asset_scan_marks_and_restores_files(
     response = client.get("/api/v1/assets/missing", headers=headers)
     assert response.status_code == 200
     assert response.json()["total"] == 0
+
+
+def test_hdr_and_exr_are_supported_image_assets() -> None:
+    assert get_asset_type(Path("studio_light.hdr")) == "image"
+    assert get_asset_type(Path("skybox.exr")) == "image"

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff"}
+IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "hdr", "exr"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "mkv", "avi", "webm"}
 MODEL_EXTENSIONS = {"pmx", "pmd", "fbx", "obj", "glb", "gltf", "blend"}
 MOTION_EXTENSIONS = {"vmd", "vpd"}
