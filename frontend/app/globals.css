@@ -173,6 +173,12 @@ a {
   gap: 16px;
 }
 
+.split-grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+}
+
 .panel {
   padding: 16px;
 }
@@ -318,6 +324,25 @@ a {
   margin: 12px 0;
 }
 
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.list-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  padding: 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.list-item.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 .auth-page {
   min-height: 100vh;
   display: grid;
@@ -340,6 +365,10 @@ a {
   }
 
   .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .split-grid {
     grid-template-columns: 1fr;
   }
 

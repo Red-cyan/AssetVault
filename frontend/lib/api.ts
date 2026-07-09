@@ -80,6 +80,24 @@ export type StatsOverview = {
   }>;
 };
 
+export type Project = {
+  id: string;
+  name: string;
+  description: string | null;
+  cover_asset_id: string | null;
+  asset_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectDetail = Project & {
+  assets: Array<{
+    role: string;
+    created_at: string;
+    asset: Asset;
+  }>;
+};
+
 export function getToken() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("assetvault_token");
