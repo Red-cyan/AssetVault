@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,7 @@ from backend.app.schemas.asset import (
     AssetBatchUpdateResponse,
     AssetCleanupResponse,
     AssetDetail,
+    AssetFolderGroup,
     AssetListResponse,
     AssetRead,
     AssetUpdate,
@@ -29,6 +31,36 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 
 PRIMARY_ASSET_TYPES = {"model", "motion", "ue"}
 SUPPORT_ASSET_TYPES = {"image", "video"}
+
+
+def path_prefix_filter(directory_path: str):
+    normalized = directory_path.rstrip("\\/")
+    return or_(
+        Asset.path == normalized,
+        Asset.path.ilike(f"{normalized}/%"),
+        Asset.path.ilike(f"{normalized}\\%"),
+    )
+
+
+def resolve_asset_group(asset: Asset) -> tuple[str, str]:
+    asset_path = Path(asset.path)
+    folder = asset.folder
+    if folder is None:
+        group_path = asset_path.parent
+        return group_path.name or str(group_path), str(group_path)
+
+    root = Path(folder.path)
+    try:
+        relative_parts = asset_path.relative_to(root).parts
+    except ValueError:
+        group_path = asset_path.parent
+        return group_path.name or str(group_path), str(group_path)
+
+    if len(relative_parts) <= 1:
+        return folder.name, folder.path
+
+    group_path = root / relative_parts[0]
+    return group_path.name or str(group_path), str(group_path)
 
 
 def serialize_asset_detail(asset: Asset) -> AssetDetail:
@@ -81,6 +113,7 @@ def list_assets(
     favorite: bool | None = None,
     exists_on_disk: bool | None = None,
     scope: Literal["primary", "support", "all"] = "primary",
+    directory_path: str | None = None,
     sort_by: Literal[
         "name",
         "size_bytes",
@@ -118,6 +151,8 @@ def list_assets(
         filters.append(Asset.is_favorite == favorite)
     if exists_on_disk is not None:
         filters.append(Asset.exists_on_disk == exists_on_disk)
+    if directory_path:
+        filters.append(path_prefix_filter(directory_path))
     if tag_id:
         stmt = stmt.join(AssetTag, AssetTag.asset_id == Asset.id)
         count_stmt = count_stmt.join(AssetTag, AssetTag.asset_id == Asset.id)
@@ -132,6 +167,48 @@ def list_assets(
     total = db.scalar(count_stmt) or 0
     items = list(db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)))
     return AssetListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/folder-groups", response_model=list[AssetFolderGroup])
+def list_asset_folder_groups(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[AssetFolderGroup]:
+    assets = list(
+        db.scalars(
+            select(Asset)
+            .options(selectinload(Asset.folder))
+            .where(Asset.user_id == current_user.id, Asset.is_deleted.is_(False))
+        )
+    )
+    groups: dict[str, dict[str, int | str]] = {}
+    for asset in assets:
+        name, path = resolve_asset_group(asset)
+        group = groups.setdefault(
+            path,
+            {
+                "name": name,
+                "path": path,
+                "total_count": 0,
+                "primary_count": 0,
+                "support_count": 0,
+                "size_bytes": 0,
+            },
+        )
+        group["total_count"] = int(group["total_count"]) + 1
+        group["size_bytes"] = int(group["size_bytes"]) + asset.size_bytes
+        if asset.asset_type in PRIMARY_ASSET_TYPES:
+            group["primary_count"] = int(group["primary_count"]) + 1
+        if asset.asset_type in SUPPORT_ASSET_TYPES:
+            group["support_count"] = int(group["support_count"]) + 1
+
+    return [
+        AssetFolderGroup(**group)
+        for group in sorted(
+            groups.values(),
+            key=lambda item: (-int(item["primary_count"]), str(item["name"]).lower()),
+        )
+    ]
 
 
 @router.patch("/batch", response_model=AssetBatchUpdateResponse)

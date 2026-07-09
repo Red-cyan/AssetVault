@@ -218,6 +218,7 @@ page=1
 page_size=60
 q=stage
 scope=primary
+directory_path=E:/Assets/MMD/miku
 type=model
 tag_id=<tag_id>
 favorite=true
@@ -241,12 +242,18 @@ sort_order=desc
 - `scope=all`：展示全部索引，适合审计、清理和批量维护。
 - 如果同时传入 `type=image` 这类具体类型筛选，具体类型优先。
 
+工程目录：
+
+- `GET /api/v1/assets/folder-groups` 会按扫描根目录下的一级子目录生成工程/素材包分组。
+- `directory_path=<path>` 用于只查看某个工程目录下的素材，包含该目录的所有子目录。
+- 例如 `miku/miku.pmx` 和 `miku/textures/body.png` 会归到同一个 `miku` 工程目录中。
+
 设计说明：
 
 - 查询数据库索引，不实时遍历磁盘。
 - 默认过滤回收站素材。
 - 搜索范围包含名称、路径、扩展名、作者、描述。
-- 系统仍然完整索引所有支持文件，但素材库默认按“主素材”展示，避免贴图、视频等支持文件干扰日常浏览。
+- 系统仍然完整索引所有支持文件，但素材库浏览先按工程目录分组，再默认按“主素材”展示，避免贴图、视频等支持文件干扰日常浏览。
 
 ### 素材详情
 

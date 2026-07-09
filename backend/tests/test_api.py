@@ -717,6 +717,80 @@ def test_asset_list_defaults_to_primary_scope(client: TestClient) -> None:
     assert response.json()["total"] == 1
 
 
+def test_assets_can_be_grouped_and_filtered_by_project_folder(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        folder = Folder(user_id=user_id, name="MMD Library", path="E:/assets")
+        db.add(folder)
+        db.commit()
+        db.refresh(folder)
+        db.add_all(
+            [
+                Asset(
+                    user_id=user_id,
+                    folder_id=folder.id,
+                    name="miku.pmx",
+                    stem="miku",
+                    extension="pmx",
+                    asset_type="model",
+                    path="E:/assets/miku/miku.pmx",
+                    size_bytes=1000,
+                ),
+                Asset(
+                    user_id=user_id,
+                    folder_id=folder.id,
+                    name="body.png",
+                    stem="body",
+                    extension="png",
+                    asset_type="image",
+                    path="E:/assets/miku/textures/body.png",
+                    size_bytes=2000,
+                ),
+                Asset(
+                    user_id=user_id,
+                    folder_id=folder.id,
+                    name="stage.glb",
+                    stem="stage",
+                    extension="glb",
+                    asset_type="model",
+                    path="E:/assets/stage/stage.glb",
+                    size_bytes=3000,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/assets/folder-groups", headers=headers)
+    assert response.status_code == 200
+    groups = response.json()
+    miku_group = next(item for item in groups if item["name"] == "miku")
+    assert miku_group["total_count"] == 2
+    assert miku_group["primary_count"] == 1
+    assert miku_group["support_count"] == 1
+
+    response = client.get(
+        "/api/v1/assets?scope=all&directory_path=E:/assets/miku",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert {item["name"] for item in data["items"]} == {"miku.pmx", "body.png"}
+
+    response = client.get(
+        "/api/v1/assets?directory_path=E:/assets/miku",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "miku.pmx"
+
+
 def test_tags_can_be_updated_and_deleted(client: TestClient) -> None:
     headers = register_and_login(client)
     db = next(app.dependency_overrides[get_db]())

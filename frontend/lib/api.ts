@@ -34,6 +34,15 @@ export type AssetList = {
   page_size: number;
 };
 
+export type AssetFolderGroup = {
+  name: string;
+  path: string;
+  total_count: number;
+  primary_count: number;
+  support_count: number;
+  size_bytes: number;
+};
+
 export type Folder = {
   id: string;
   name: string;

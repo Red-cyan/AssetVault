@@ -65,6 +65,15 @@ class AssetListResponse(BaseModel):
     page_size: int
 
 
+class AssetFolderGroup(BaseModel):
+    name: str
+    path: str
+    total_count: int
+    primary_count: int
+    support_count: int
+    size_bytes: int
+
+
 class AssetCleanupResponse(BaseModel):
     excluded_removed: int
     missing_removed: int

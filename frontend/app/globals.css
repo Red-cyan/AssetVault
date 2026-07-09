@@ -189,6 +189,31 @@ a {
   padding: 10px;
 }
 
+.folder-groups-panel {
+  margin-bottom: 18px;
+}
+
+.folder-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.folder-group-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  color: inherit;
+  min-height: 104px;
+  padding: 12px;
+  text-align: left;
+}
+
+.folder-group-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 .pagination-toolbar {
   justify-content: flex-end;
 }

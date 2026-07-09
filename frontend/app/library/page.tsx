@@ -8,6 +8,7 @@ import {
   apiFetch,
   Asset,
   AssetDetail,
+  AssetFolderGroup,
   AssetList,
   Folder,
   getToken,
@@ -60,6 +61,7 @@ function thumbnailSrc(asset: Asset | AssetDetail) {
 export default function LibraryPage() {
   const router = useRouter();
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [folderGroups, setFolderGroups] = useState<AssetFolderGroup[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -70,6 +72,7 @@ export default function LibraryPage() {
   const [naturalQuery, setNaturalQuery] = useState("");
   const [assetType, setAssetType] = useState("");
   const [assetScope, setAssetScope] = useState<AssetScope>("primary");
+  const [directoryPath, setDirectoryPath] = useState("");
   const [tagId, setTagId] = useState("");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>("file_modified_at");
@@ -99,14 +102,16 @@ export default function LibraryPage() {
   async function loadAssets(
     nextPage = page,
     nextPageSize = pageSize,
-    overrides: Partial<{ assetScope: AssetScope; assetType: string }> = {},
+    overrides: Partial<{ assetScope: AssetScope; assetType: string; directoryPath: string }> = {},
   ) {
     const nextAssetScope = overrides.assetScope ?? assetScope;
     const nextAssetType = overrides.assetType ?? assetType;
+    const nextDirectoryPath = overrides.directoryPath ?? directoryPath;
     const params = new URLSearchParams();
     if (query) params.set("q", query);
     if (nextAssetType) params.set("type", nextAssetType);
     params.set("scope", nextAssetScope);
+    if (nextDirectoryPath) params.set("directory_path", nextDirectoryPath);
     if (tagId) params.set("tag_id", tagId);
     if (favoriteOnly) params.set("favorite", "true");
     params.set("page", String(nextPage));
@@ -145,6 +150,14 @@ export default function LibraryPage() {
     setFolders(await apiFetch<Folder[]>("/folders"));
   }
 
+  async function loadFolderGroups() {
+    const result = await apiFetch<AssetFolderGroup[]>("/assets/folder-groups");
+    setFolderGroups(result);
+    setDirectoryPath((current) =>
+      current && result.some((group) => group.path === current) ? current : "",
+    );
+  }
+
   async function loadTasks() {
     setTasks(await apiFetch<Task[]>("/tasks"));
   }
@@ -160,7 +173,14 @@ export default function LibraryPage() {
   }
 
   async function loadAll() {
-    await Promise.all([loadAssets(), loadFolders(), loadTasks(), loadTags(), loadProjects()]);
+    await Promise.all([
+      loadAssets(),
+      loadFolderGroups(),
+      loadFolders(),
+      loadTasks(),
+      loadTags(),
+      loadProjects(),
+    ]);
   }
 
   useEffect(() => {
@@ -175,10 +195,22 @@ export default function LibraryPage() {
     if (!activeTask) return;
     const timer = window.setInterval(async () => {
       await loadTasks();
+      await loadFolderGroups();
       await loadAssets();
     }, 1800);
     return () => window.clearInterval(timer);
-  }, [activeTask, query, assetType, assetScope, tagId, favoriteOnly, sortBy, page, pageSize]);
+  }, [
+    activeTask,
+    query,
+    assetType,
+    assetScope,
+    directoryPath,
+    tagId,
+    favoriteOnly,
+    sortBy,
+    page,
+    pageSize,
+  ]);
 
   useEffect(() => {
     if (!selected) return;
@@ -200,6 +232,7 @@ export default function LibraryPage() {
       await loadFolders();
       await apiFetch<Task>(`/folders/${folder.id}/scan`, { method: "POST" });
       await loadTasks();
+      await loadFolderGroups();
       setMessage("扫描任务已创建，素材列表会自动刷新。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "添加目录失败");
@@ -212,6 +245,7 @@ export default function LibraryPage() {
     try {
       await apiFetch<Task>(`/folders/${folderId}/scan`, { method: "POST" });
       await loadTasks();
+      await loadFolderGroups();
       setMessage("扫描任务已创建。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "扫描失败");
@@ -224,6 +258,7 @@ export default function LibraryPage() {
     try {
       await apiFetch<void>(`/folders/${folderId}`, { method: "DELETE" });
       await loadFolders();
+      await loadFolderGroups();
       setMessage("素材目录配置已移除，原始文件和已有素材索引不会被删除。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "移除目录失败");
@@ -262,6 +297,11 @@ export default function LibraryPage() {
   async function changeAssetType(value: string) {
     setAssetType(value);
     await loadAssets(1, pageSize, { assetType: value });
+  }
+
+  async function changeDirectoryPath(value: string) {
+    setDirectoryPath(value);
+    await loadAssets(1, pageSize, { directoryPath: value });
   }
 
   async function goToPage(value: number) {
@@ -500,6 +540,42 @@ export default function LibraryPage() {
           清理索引
         </button>
       </div>
+
+      <section className="panel folder-groups-panel">
+        <div className="section-title">
+          <div>
+            <h2>工程目录</h2>
+            <p className="asset-sub">按扫描根目录下的一级文件夹组织素材包，贴图和主文件会归到同一个工程目录。</p>
+          </div>
+          <button className="button secondary" onClick={() => void changeDirectoryPath("")}>
+            全部工程
+          </button>
+        </div>
+        {folderGroups.length === 0 ? (
+          <p className="asset-sub">暂无工程目录。添加素材目录并扫描后会自动生成。</p>
+        ) : (
+          <div className="folder-group-grid">
+            {folderGroups.map((group) => (
+              <button
+                className={`folder-group-card ${directoryPath === group.path ? "active" : ""}`}
+                key={group.path}
+                onClick={() => void changeDirectoryPath(group.path)}
+              >
+                <div className="asset-name" title={group.name}>
+                  {group.name}
+                </div>
+                <div className="asset-sub" title={group.path}>
+                  {group.path}
+                </div>
+                <div className="asset-sub">
+                  主素材 {group.primary_count} · 辅助 {group.support_count} · 共{" "}
+                  {group.total_count}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="toolbar batch-toolbar">
         <span className="asset-sub">已选择 {selectedIds.length} 个素材</span>
