@@ -120,6 +120,14 @@ export type AiAnalyzeResult = {
   source: string;
 };
 
+export type NaturalLanguageSearchResult = {
+  items: Asset[];
+  total: number;
+  query: string;
+  interpreted_keywords: string[];
+  mode: string;
+};
+
 export function getToken() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("assetvault_token");

@@ -158,3 +158,36 @@ def test_ai_analysis_generates_tags_and_description(client: TestClient) -> None:
     assert "舞台" in data["tags"]
     assert data["asset"]["description"]
     assert any(tag["name"] == "舞台" for tag in data["asset"]["tags"])
+
+
+def test_natural_language_search_returns_semantic_matches(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset = Asset(
+            user_id=user_id,
+            name="concert_stage.glb",
+            stem="concert_stage",
+            extension="glb",
+            asset_type="model",
+            path="E:/assets/stage/concert_stage.glb",
+            description="适合大型演唱会的舞台模型，包含 LED 背景。",
+            size_bytes=2048,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/v1/search/natural-language",
+        headers=headers,
+        json={"query": "找一个适合演唱会的大舞台", "limit": 10},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] >= 1
+    assert data["items"][0]["name"] == "concert_stage.glb"
+    assert "舞台" in data["interpreted_keywords"]

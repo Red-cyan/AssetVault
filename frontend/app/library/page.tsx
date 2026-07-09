@@ -15,6 +15,7 @@ import {
   Task,
   AssetCleanupResult,
   AiAnalyzeResult,
+  NaturalLanguageSearchResult,
 } from "@/lib/api";
 
 type ViewMode = "grid" | "list";
@@ -51,6 +52,7 @@ export default function LibraryPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<AssetDetail | null>(null);
   const [query, setQuery] = useState("");
+  const [naturalQuery, setNaturalQuery] = useState("");
   const [assetType, setAssetType] = useState("");
   const [tagId, setTagId] = useState("");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
@@ -79,6 +81,23 @@ export default function LibraryPage() {
     params.set("sort_order", sortBy === "name" ? "asc" : "desc");
     const result = await apiFetch<AssetList>(`/assets?${params.toString()}`);
     setAssets(result.items);
+  }
+
+  async function runNaturalSearch() {
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await apiFetch<NaturalLanguageSearchResult>("/search/natural-language", {
+        method: "POST",
+        body: JSON.stringify({ query: naturalQuery, limit: 60 }),
+      });
+      setAssets(result.items);
+      setMessage(
+        `AI 搜索返回 ${result.total} 个候选，关键词：${result.interpreted_keywords.join("、")}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI 搜索失败");
+    }
   }
 
   async function loadFolders() {
@@ -292,6 +311,18 @@ export default function LibraryPage() {
         </button>
         <button className="button secondary" onClick={() => void cleanupAssets()}>
           清理索引
+        </button>
+      </div>
+
+      <div className="toolbar">
+        <input
+          className="input"
+          placeholder="AI 搜索：例如 找一个适合演唱会的大舞台"
+          value={naturalQuery}
+          onChange={(event) => setNaturalQuery(event.target.value)}
+        />
+        <button className="button" onClick={() => void runNaturalSearch()}>
+          AI 搜索
         </button>
       </div>
 
