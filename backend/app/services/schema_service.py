@@ -25,3 +25,15 @@ def ensure_runtime_schema(engine: Engine) -> None:
             )
         if "deleted_at" not in columns:
             connection.execute(text("ALTER TABLE assets ADD COLUMN deleted_at DATETIME"))
+        if "exists_on_disk" not in columns:
+            connection.execute(
+                text("ALTER TABLE assets ADD COLUMN exists_on_disk BOOLEAN DEFAULT 1 NOT NULL")
+            )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_assets_exists_on_disk "
+                    "ON assets (exists_on_disk)"
+                )
+            )
+        if "missing_since" not in columns:
+            connection.execute(text("ALTER TABLE assets ADD COLUMN missing_since DATETIME"))

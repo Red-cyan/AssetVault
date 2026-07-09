@@ -15,11 +15,13 @@ from backend.app.schemas.asset import (
     AssetRead,
     AssetUpdate,
     DuplicateAssetResponse,
+    MissingAssetScanResponse,
     TrashSummaryResponse,
 )
 from backend.app.schemas.tag import AssetTagsUpdate, TagRead
 from backend.app.services.asset_scanner import cleanup_excluded_assets, cleanup_missing_assets
 from backend.app.services.duplicate_service import find_duplicate_groups, refresh_missing_hashes
+from backend.app.services.missing_asset_service import scan_missing_assets
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -40,6 +42,7 @@ def list_assets(
     asset_type: str | None = Query(default=None, alias="type"),
     tag_id: str | None = None,
     favorite: bool | None = None,
+    exists_on_disk: bool | None = None,
     sort_by: Literal[
         "name",
         "size_bytes",
@@ -71,6 +74,8 @@ def list_assets(
         filters.append(Asset.asset_type == asset_type)
     if favorite is not None:
         filters.append(Asset.is_favorite == favorite)
+    if exists_on_disk is not None:
+        filters.append(Asset.exists_on_disk == exists_on_disk)
     if tag_id:
         stmt = stmt.join(AssetTag, AssetTag.asset_id == Asset.id)
         count_stmt = count_stmt.join(AssetTag, AssetTag.asset_id == Asset.id)
@@ -114,6 +119,34 @@ def list_duplicate_assets(
         total_assets=total_assets,
         hashed_assets=hashed_assets,
     )
+
+
+@router.post("/missing/scan", response_model=MissingAssetScanResponse)
+def scan_missing_assets_endpoint(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> MissingAssetScanResponse:
+    result = scan_missing_assets(db, user_id=current_user.id)
+    return MissingAssetScanResponse(**result)
+
+
+@router.get("/missing", response_model=AssetListResponse)
+def list_missing_assets(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> AssetListResponse:
+    items = list(
+        db.scalars(
+            select(Asset)
+            .where(
+                Asset.user_id == current_user.id,
+                Asset.is_deleted.is_(False),
+                Asset.exists_on_disk.is_(False),
+            )
+            .order_by(Asset.missing_since.desc())
+        )
+    )
+    return AssetListResponse(items=items, total=len(items), page=1, page_size=len(items) or 1)
 
 
 @router.get("/{asset_id}", response_model=AssetDetail)

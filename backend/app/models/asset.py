@@ -34,6 +34,8 @@ class Asset(Base):
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    exists_on_disk: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    missing_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     file_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     file_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

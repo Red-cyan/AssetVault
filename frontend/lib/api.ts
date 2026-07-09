@@ -17,6 +17,8 @@ export type Asset = {
   is_favorite: boolean;
   is_deleted: boolean;
   deleted_at: string | null;
+  exists_on_disk: boolean;
+  missing_since: string | null;
   last_opened_at: string | null;
   file_modified_at: string | null;
 };
@@ -154,6 +156,12 @@ export type DuplicateAssetResponse = {
 export type TrashSummary = {
   deleted_count: number;
   purged_count: number;
+};
+
+export type MissingAssetScanResult = {
+  checked_count: number;
+  missing_count: number;
+  restored_count: number;
 };
 
 export function getToken() {

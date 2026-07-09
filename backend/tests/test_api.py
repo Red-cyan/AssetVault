@@ -305,3 +305,61 @@ def test_asset_trash_lifecycle(client: TestClient) -> None:
     response = client.get("/api/v1/trash/assets", headers=headers)
     assert response.status_code == 200
     assert response.json()["total"] == 0
+
+
+def test_missing_asset_scan_marks_and_restores_files(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    headers = register_and_login(client)
+    existing = tmp_path / "exists.glb"
+    missing = tmp_path / "missing.glb"
+    existing.write_bytes(b"exists")
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        db.add_all(
+            [
+                Asset(
+                    user_id=user_id,
+                    name="exists.glb",
+                    stem="exists",
+                    extension="glb",
+                    asset_type="model",
+                    path=str(existing),
+                    size_bytes=existing.stat().st_size,
+                ),
+                Asset(
+                    user_id=user_id,
+                    name="missing.glb",
+                    stem="missing",
+                    extension="glb",
+                    asset_type="model",
+                    path=str(missing),
+                    size_bytes=8,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post("/api/v1/assets/missing/scan", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["checked_count"] == 2
+    assert response.json()["missing_count"] == 1
+
+    response = client.get("/api/v1/assets/missing", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["name"] == "missing.glb"
+
+    missing.write_bytes(b"restored")
+    response = client.post("/api/v1/assets/missing/scan", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["restored_count"] == 1
+
+    response = client.get("/api/v1/assets/missing", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 0

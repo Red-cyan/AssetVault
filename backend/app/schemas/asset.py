@@ -23,6 +23,8 @@ class AssetRead(BaseModel):
     is_favorite: bool
     is_deleted: bool
     deleted_at: datetime | None
+    exists_on_disk: bool
+    missing_since: datetime | None
     last_opened_at: datetime | None
     file_created_at: datetime | None
     file_modified_at: datetime | None
@@ -71,3 +73,9 @@ class DuplicateAssetResponse(BaseModel):
 class TrashSummaryResponse(BaseModel):
     deleted_count: int
     purged_count: int = 0
+
+
+class MissingAssetScanResponse(BaseModel):
+    checked_count: int
+    missing_count: int
+    restored_count: int
