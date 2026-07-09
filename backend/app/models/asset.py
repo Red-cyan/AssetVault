@@ -32,6 +32,8 @@ class Asset(Base):
     author: Mapped[str | None] = mapped_column(String(120), nullable=True)
     rating: Mapped[int] = mapped_column(Integer, default=0)
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     file_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     file_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

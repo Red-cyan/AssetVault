@@ -258,3 +258,50 @@ def test_duplicate_detection_groups_same_content_files(
         "stage-a.glb",
         "stage-b.glb",
     }
+
+
+def test_asset_trash_lifecycle(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset = Asset(
+            user_id=user_id,
+            name="unused_stage.glb",
+            stem="unused_stage",
+            extension="glb",
+            asset_type="model",
+            path="E:/assets/unused_stage.glb",
+            size_bytes=1024,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = asset.id
+    finally:
+        db.close()
+
+    response = client.delete(f"/api/v1/assets/{asset_id}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["deleted_count"] == 1
+
+    response = client.get("/api/v1/assets", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+    response = client.get("/api/v1/trash/assets", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["is_deleted"] is True
+
+    response = client.post(f"/api/v1/trash/assets/{asset_id}/restore", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["is_deleted"] is False
+
+    client.delete(f"/api/v1/assets/{asset_id}", headers=headers)
+    response = client.delete(f"/api/v1/trash/assets/{asset_id}", headers=headers)
+    assert response.status_code == 204
+
+    response = client.get("/api/v1/trash/assets", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 0

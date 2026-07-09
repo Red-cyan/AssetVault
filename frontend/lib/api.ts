@@ -15,6 +15,8 @@ export type Asset = {
   author: string | null;
   rating: number;
   is_favorite: boolean;
+  is_deleted: boolean;
+  deleted_at: string | null;
   last_opened_at: string | null;
   file_modified_at: string | null;
 };
@@ -147,6 +149,11 @@ export type DuplicateAssetResponse = {
   total_groups: number;
   total_assets: number;
   hashed_assets: number;
+};
+
+export type TrashSummary = {
+  deleted_count: number;
+  purged_count: number;
 };
 
 export function getToken() {

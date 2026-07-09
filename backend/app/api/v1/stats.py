@@ -19,15 +19,22 @@ def overview(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StatsOverview:
     total_assets = db.scalar(
-        select(func.count(Asset.id)).where(Asset.user_id == current_user.id)
+        select(func.count(Asset.id)).where(
+            Asset.user_id == current_user.id,
+            Asset.is_deleted.is_(False),
+        )
     ) or 0
     total_size_bytes = db.scalar(
-        select(func.coalesce(func.sum(Asset.size_bytes), 0)).where(Asset.user_id == current_user.id)
+        select(func.coalesce(func.sum(Asset.size_bytes), 0)).where(
+            Asset.user_id == current_user.id,
+            Asset.is_deleted.is_(False),
+        )
     ) or 0
     favorite_count = db.scalar(
         select(func.count(Asset.id)).where(
             Asset.user_id == current_user.id,
             Asset.is_favorite.is_(True),
+            Asset.is_deleted.is_(False),
         )
     ) or 0
     tag_count = db.scalar(select(func.count(Tag.id)).where(Tag.user_id == current_user.id)) or 0
@@ -39,6 +46,7 @@ def overview(
         select(func.count(Asset.id)).where(
             Asset.user_id == current_user.id,
             Asset.indexed_at >= recent_since,
+            Asset.is_deleted.is_(False),
         )
     ) or 0
 
@@ -48,13 +56,13 @@ def overview(
             func.count(Asset.id),
             func.coalesce(func.sum(Asset.size_bytes), 0),
         )
-        .where(Asset.user_id == current_user.id)
+        .where(Asset.user_id == current_user.id, Asset.is_deleted.is_(False))
         .group_by(Asset.asset_type)
         .order_by(func.count(Asset.id).desc())
     )
     extension_rows = db.execute(
         select(Asset.extension, func.count(Asset.id))
-        .where(Asset.user_id == current_user.id)
+        .where(Asset.user_id == current_user.id, Asset.is_deleted.is_(False))
         .group_by(Asset.extension)
         .order_by(func.count(Asset.id).desc())
         .limit(12)

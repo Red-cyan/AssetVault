@@ -123,7 +123,7 @@ def natural_language_search(
         .options(selectinload(Asset.tags).selectinload(AssetTag.tag))
         .outerjoin(AssetTag, AssetTag.asset_id == Asset.id)
         .outerjoin(Tag, Tag.id == AssetTag.tag_id)
-        .where(Asset.user_id == user_id)
+        .where(Asset.user_id == user_id, Asset.is_deleted.is_(False))
     )
 
     conditions = []

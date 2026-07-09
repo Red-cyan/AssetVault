@@ -16,6 +16,7 @@ import {
   AssetCleanupResult,
   AiAnalyzeResult,
   NaturalLanguageSearchResult,
+  TrashSummary,
 } from "@/lib/api";
 
 type ViewMode = "grid" | "list";
@@ -246,6 +247,22 @@ export default function LibraryPage() {
     }
   }
 
+  async function moveToTrash() {
+    if (!selected) return;
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await apiFetch<TrashSummary>(`/assets/${selected.id}`, {
+        method: "DELETE",
+      });
+      setSelected(null);
+      await loadAssets();
+      setMessage(`已移入回收站。当前回收站共有 ${result.deleted_count} 条索引。`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "移入回收站失败");
+    }
+  }
+
   return (
     <AppShell>
       <div className="section-title">
@@ -410,6 +427,9 @@ export default function LibraryPage() {
                 </button>
                 <button className="button" onClick={saveDetails}>
                   保存详情
+                </button>
+                <button className="button secondary" onClick={moveToTrash}>
+                  移入回收站
                 </button>
               </div>
               <label className="field">

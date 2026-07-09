@@ -21,6 +21,8 @@ class AssetRead(BaseModel):
     author: str | None
     rating: int
     is_favorite: bool
+    is_deleted: bool
+    deleted_at: datetime | None
     last_opened_at: datetime | None
     file_created_at: datetime | None
     file_modified_at: datetime | None
@@ -64,3 +66,8 @@ class DuplicateAssetResponse(BaseModel):
     total_groups: int
     total_assets: int
     hashed_assets: int
+
+
+class TrashSummaryResponse(BaseModel):
+    deleted_count: int
+    purged_count: int = 0

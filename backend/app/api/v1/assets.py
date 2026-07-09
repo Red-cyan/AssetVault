@@ -15,6 +15,7 @@ from backend.app.schemas.asset import (
     AssetRead,
     AssetUpdate,
     DuplicateAssetResponse,
+    TrashSummaryResponse,
 )
 from backend.app.schemas.tag import AssetTagsUpdate, TagRead
 from backend.app.services.asset_scanner import cleanup_excluded_assets, cleanup_missing_assets
@@ -48,8 +49,11 @@ def list_assets(
     ] = "file_modified_at",
     sort_order: Literal["asc", "desc"] = "desc",
 ) -> AssetListResponse:
-    stmt = select(Asset).where(Asset.user_id == current_user.id)
-    count_stmt = select(func.count(Asset.id)).where(Asset.user_id == current_user.id)
+    stmt = select(Asset).where(Asset.user_id == current_user.id, Asset.is_deleted.is_(False))
+    count_stmt = select(func.count(Asset.id)).where(
+        Asset.user_id == current_user.id,
+        Asset.is_deleted.is_(False),
+    )
 
     filters = []
     if q:
@@ -121,7 +125,11 @@ def get_asset(
     asset = db.scalar(
         select(Asset)
         .options(selectinload(Asset.tags).selectinload(AssetTag.tag))
-        .where(Asset.id == asset_id, Asset.user_id == current_user.id)
+        .where(
+            Asset.id == asset_id,
+            Asset.user_id == current_user.id,
+            Asset.is_deleted.is_(False),
+        )
     )
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -136,7 +144,7 @@ def update_asset(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Asset:
     asset = db.get(Asset, asset_id)
-    if asset is None or asset.user_id != current_user.id:
+    if asset is None or asset.user_id != current_user.id or asset.is_deleted:
         raise HTTPException(status_code=404, detail="Asset not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(asset, field, value)
@@ -152,7 +160,7 @@ def mark_opened(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Asset:
     asset = db.get(Asset, asset_id)
-    if asset is None or asset.user_id != current_user.id:
+    if asset is None or asset.user_id != current_user.id or asset.is_deleted:
         raise HTTPException(status_code=404, detail="Asset not found")
     asset.last_opened_at = datetime.utcnow()
     db.commit()
@@ -170,7 +178,11 @@ def update_asset_tags(
     asset = db.scalar(
         select(Asset)
         .options(selectinload(Asset.tags).selectinload(AssetTag.tag))
-        .where(Asset.id == asset_id, Asset.user_id == current_user.id)
+        .where(
+            Asset.id == asset_id,
+            Asset.user_id == current_user.id,
+            Asset.is_deleted.is_(False),
+        )
     )
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -202,3 +214,24 @@ def update_asset_tags(
         .where(Asset.id == asset_id)
     )
     return serialize_asset_detail(asset)
+
+
+@router.delete("/{asset_id}", response_model=TrashSummaryResponse)
+def move_asset_to_trash(
+    asset_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TrashSummaryResponse:
+    asset = db.get(Asset, asset_id)
+    if asset is None or asset.user_id != current_user.id or asset.is_deleted:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    asset.is_deleted = True
+    asset.deleted_at = datetime.utcnow()
+    db.commit()
+    deleted_count = db.scalar(
+        select(func.count(Asset.id)).where(
+            Asset.user_id == current_user.id,
+            Asset.is_deleted.is_(True),
+        )
+    ) or 0
+    return TrashSummaryResponse(deleted_count=deleted_count)

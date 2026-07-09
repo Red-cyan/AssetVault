@@ -14,6 +14,7 @@ def refresh_missing_hashes(db: Session, *, user_id: str) -> int:
             select(Asset).where(
                 Asset.user_id == user_id,
                 Asset.file_hash.is_(None),
+                Asset.is_deleted.is_(False),
             )
         )
     )
@@ -34,6 +35,7 @@ def find_duplicate_groups(db: Session, *, user_id: str) -> tuple[list[dict], int
             select(Asset).where(
                 Asset.user_id == user_id,
                 Asset.file_hash.is_not(None),
+                Asset.is_deleted.is_(False),
             )
         )
     )

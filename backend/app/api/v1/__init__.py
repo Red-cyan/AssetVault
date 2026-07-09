@@ -11,6 +11,7 @@ from backend.app.api.v1 import (
     stats,
     tags,
     tasks,
+    trash,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,4 @@ api_router.include_router(search.router)
 api_router.include_router(tasks.router)
 api_router.include_router(stats.router)
 api_router.include_router(settings.router)
+api_router.include_router(trash.router)

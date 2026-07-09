@@ -16,3 +16,12 @@ def ensure_runtime_schema(engine: Engine) -> None:
             connection.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_assets_file_hash ON assets (file_hash)")
             )
+        if "is_deleted" not in columns:
+            connection.execute(
+                text("ALTER TABLE assets ADD COLUMN is_deleted BOOLEAN DEFAULT 0 NOT NULL")
+            )
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_assets_is_deleted ON assets (is_deleted)")
+            )
+        if "deleted_at" not in columns:
+            connection.execute(text("ALTER TABLE assets ADD COLUMN deleted_at DATETIME"))
