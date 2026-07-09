@@ -59,7 +59,11 @@ export type Task = {
   processed: number;
   message: string | null;
   error: string | null;
+  payload: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
   created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 };
 
 export type AssetCleanupResult = {
