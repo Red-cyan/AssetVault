@@ -1,0 +1,1 @@
+"""AssetVault backend package."""

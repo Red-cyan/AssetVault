@@ -1,0 +1,36 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from backend.app import models  # noqa: F401
+from backend.app.api.v1 import api_router
+from backend.app.core.config import get_settings
+from backend.app.db.base import Base
+from backend.app.db.session import engine
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+    Base.metadata.create_all(bind=engine)
+
+    app = FastAPI(title=settings.app_name)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.allowed_origins,
+        allow_origin_regex=settings.allowed_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.include_router(api_router, prefix=settings.api_v1_prefix)
+    settings.thumbnail_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/thumbnails", StaticFiles(directory=settings.thumbnail_dir), name="thumbnails")
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    return app
+
+
+app = create_app()

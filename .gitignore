@@ -1,0 +1,15 @@
+.venv/
+.agents/
+.idea/
+__pycache__/
+*.pyc
+*.log
+.pytest_cache/
+.ruff_cache/
+assetvault.db
+cache/
+node_modules/
+.next/
+dist/
+build/
+.env
