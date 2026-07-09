@@ -472,6 +472,26 @@ GET /api/v1/projects/{project_id}
 - 项目引用的素材。
 - 每个引用素材的角色，例如 `character`、`stage`、`motion`、`music`。
 
+### 更新项目
+
+```http
+PATCH /api/v1/projects/{project_id}
+```
+
+字段：
+
+```json
+{
+  "name": "演唱会 Demo",
+  "description": "更新后的项目说明"
+}
+```
+
+说明：
+
+- 用于维护作品项目名称、说明和封面素材。
+- 前端项目页可直接编辑名称和说明。
+
 ### 添加项目素材
 
 ```http

@@ -32,6 +32,8 @@ export default function ProjectsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [assetQuery, setAssetQuery] = useState("");
   const [role, setRole] = useState("other");
   const [message, setMessage] = useState<string | null>(null);
@@ -46,7 +48,10 @@ export default function ProjectsPage() {
   }
 
   async function loadProject(projectId: string) {
-    setSelected(await apiFetch<ProjectDetail>(`/projects/${projectId}`));
+    const detail = await apiFetch<ProjectDetail>(`/projects/${projectId}`);
+    setSelected(detail);
+    setEditName(detail.name);
+    setEditDescription(detail.description ?? "");
   }
 
   async function searchAssets() {
@@ -110,6 +115,27 @@ export default function ProjectsPage() {
     await apiFetch(`/projects/${selected.id}`, { method: "DELETE" });
     setSelected(null);
     await loadProjects();
+  }
+
+  async function updateProject(event: FormEvent) {
+    event.preventDefault();
+    if (!selected) return;
+    setError(null);
+    setMessage(null);
+    try {
+      await apiFetch<Project>(`/projects/${selected.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: editName,
+          description: editDescription || null,
+        }),
+      });
+      await loadProject(selected.id);
+      await loadProjects();
+      setMessage("项目资料已保存。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存项目失败");
+    }
   }
 
   async function exportProject(format: "json" | "csv") {
@@ -207,6 +233,28 @@ export default function ProjectsPage() {
                     导出 CSV 清单
                   </button>
                 </div>
+                <form className="stack" onSubmit={updateProject}>
+                  <label className="field">
+                    <span className="label">项目名称</span>
+                    <input
+                      className="input"
+                      value={editName}
+                      onChange={(event) => setEditName(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="label">说明</span>
+                    <textarea
+                      className="textarea"
+                      rows={3}
+                      value={editDescription}
+                      onChange={(event) => setEditDescription(event.target.value)}
+                    />
+                  </label>
+                  <button className="button" type="submit">
+                    保存项目资料
+                  </button>
+                </form>
                 <div className="stat-grid">
                   <div className="stat-card">
                     <div className="label">引用素材</div>

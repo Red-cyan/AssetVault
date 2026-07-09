@@ -172,6 +172,32 @@ def test_project_can_reference_asset(client: TestClient) -> None:
     assert detail["assets"][0]["asset"]["name"] == "stage.glb"
 
 
+def test_project_can_be_updated(client: TestClient) -> None:
+    headers = register_and_login(client)
+
+    response = client.post(
+        "/api/v1/projects",
+        headers=headers,
+        json={"name": "Old Name", "description": "Old description"},
+    )
+    assert response.status_code == 201
+    project_id = response.json()["id"]
+
+    response = client.patch(
+        f"/api/v1/projects/{project_id}",
+        headers=headers,
+        json={"name": "New Name", "description": "New description"},
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "New Name"
+    assert response.json()["description"] == "New description"
+
+    response = client.get(f"/api/v1/projects/{project_id}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["name"] == "New Name"
+    assert response.json()["description"] == "New description"
+
+
 def test_project_manifest_can_be_exported_as_json_and_csv(client: TestClient) -> None:
     headers = register_and_login(client)
     db = next(app.dependency_overrides[get_db]())
