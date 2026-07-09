@@ -47,15 +47,15 @@
 
 | 能力 | 状态 | 当前证据 | 说明 |
 | --- | --- | --- | --- |
-| AI 自动标签 | 部分完成 | `ai_analysis_service.py` | 当前为本地规则生成标签，接口可替换真实 AI |
-| AI 自动描述 | 部分完成 | `ai_analysis_service.py` | 当前为本地规则描述 |
+| AI 自动标签 | 已完成 | `ai_analysis_service.py`、设置页 AI 配置 | 支持 OpenAI Compatible 调用，失败时回退本地规则 |
+| AI 自动描述 | 已完成 | `ai_analysis_service.py`、设置页 AI 配置 | 支持 OpenAI Compatible 调用，失败时回退本地规则 |
 | AI 自然语言搜索 | 部分完成 | `search_service.py` | 当前为本地语义规则，不是真 Embedding |
 | AI 相似素材推荐 | 未完成 | 无 | 后续可基于标签/Embedding 实现 |
-| AI 智能分类 | 部分完成 | 标签和规则分析 | 当前能生成类别标签，但不是独立分类服务 |
+| AI 智能分类 | 部分完成 | AI 标签和规则分析 | 当前能生成类别标签，但不是独立分类服务 |
 
 面试表达建议：
 
-> 当前 AI 能力采用本地规则引擎保证演示稳定，接口和设置项已经预留 OpenAI Compatible API。后续可以把规则层替换为 Embedding、多模态模型或 CLIP，实现真正语义检索和自动标签。
+> 当前 AI 标签和描述支持 OpenAI Compatible API，并保留本地规则 fallback，保证没有 Key 或网络失败时仍可演示。自然语言搜索仍是本地语义规则，后续可升级为 Embedding 或 CLIP 检索。
 
 ## 4. 第三阶段高级功能审计
 
@@ -94,7 +94,7 @@
 3. 运行或说明演示数据脚本。
 4. 添加素材目录并扫描。
 5. 进入素材库，展示搜索、筛选、详情、标签、收藏、评分、备注。
-6. 对素材执行智能分析，说明当前为本地规则，后续可替换真实 AI。
+6. 对素材执行智能分析，说明配置 Key 时会走 OpenAI Compatible，未配置或失败时会回退本地规则。
 7. 使用自然语言搜索，例如“找一个适合演唱会的大舞台”。
 8. 创建项目，把人物、舞台、动作素材加入项目。
 9. 导出项目 JSON/CSV 清单。
@@ -106,7 +106,7 @@
 如果继续开发，建议按以下优先级：
 
 1. **文件监听**：使用 Watchdog 监听目录变化，新增文件自动入库。
-2. **真实 AI 接入**：基于 OpenAI Compatible API 做标签/描述生成，或用 Embedding 做自然语言搜索。
+2. **Embedding 搜索**：用 OpenAI Compatible Embedding 或本地向量模型替换自然语言搜索规则。
 3. **数据库迁移**：接入 Alembic，提升企业项目可信度。
 4. **前端体验统一**：统一 loading、empty、error、confirm 状态。
 5. **模型预览增强**：为 PMX、FBX、GLB 等模型生成更真实的预览图。

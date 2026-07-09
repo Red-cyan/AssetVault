@@ -394,10 +394,11 @@ POST /api/v1/ai/assets/{asset_id}/analyze
 
 当前实现：
 
-- 使用本地启发式规则，保证离线和面试演示稳定。
-- 设置页已经预留 AI Base URL、API Key、模型名配置。
+- 如果设置页配置了 AI Base URL、API Key 和 Chat 模型，后端会调用 OpenAI Compatible `/chat/completions` 生成标签和描述。
+- 调用失败、返回格式不合法或未配置 Key 时，会自动回退到本地启发式规则，保证离线和面试演示稳定。
+- 响应中的 `source` 会标明来源：`openai-compatible` 或 `local-heuristic`。
 
-后续替换方向：
+后续增强方向：
 
 - 图片使用多模态模型生成标签。
 - 模型文件可以先生成预览图，再送入视觉模型。

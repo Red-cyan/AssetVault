@@ -28,7 +28,7 @@ def analyze_asset(
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    tags, description = apply_ai_analysis(db, asset=asset)
+    result = apply_ai_analysis(db, asset=asset)
     asset = db.scalar(
         select(Asset)
         .options(selectinload(Asset.tags).selectinload(AssetTag.tag))
@@ -36,7 +36,7 @@ def analyze_asset(
     )
     return AiAnalyzeResponse(
         asset=serialize_asset_detail(asset),
-        tags=tags,
-        description=description,
-        source="local-heuristic",
+        tags=result.tags,
+        description=result.description,
+        source=result.source,
     )

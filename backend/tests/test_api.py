@@ -11,6 +11,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.models import Asset, AssetTag, Tag
+from backend.app.services.ai_analysis_service import AnalysisResult
 from backend.app.services.file_type_service import get_asset_type
 
 
@@ -370,6 +371,60 @@ def test_ai_analysis_generates_tags_and_description(client: TestClient) -> None:
     assert "舞台" in data["tags"]
     assert data["asset"]["description"]
     assert any(tag["name"] == "舞台" for tag in data["asset"]["tags"])
+
+
+def test_ai_analysis_uses_openai_compatible_when_configured(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset = Asset(
+            user_id=user_id,
+            name="anime_blue_hair.png",
+            stem="anime_blue_hair",
+            extension="png",
+            asset_type="image",
+            path="E:/assets/characters/anime_blue_hair.png",
+            size_bytes=2048,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = asset.id
+    finally:
+        db.close()
+
+    response = client.patch(
+        "/api/v1/settings",
+        headers=headers,
+        json={"ai_api_key": "sk-test", "ai_base_url": "https://example.com/v1"},
+    )
+    assert response.status_code == 200
+
+    def fake_call_openai_compatible(settings: dict, asset: Asset) -> AnalysisResult:
+        assert settings["ai_api_key"] == "sk-test"
+        assert asset.name == "anime_blue_hair.png"
+        return AnalysisResult(
+            tags=["人物", "蓝发", "动漫"],
+            description="这是一个蓝发动漫人物参考图。",
+            source="openai-compatible",
+        )
+
+    monkeypatch.setattr(
+        "backend.app.services.ai_analysis_service.call_openai_compatible",
+        fake_call_openai_compatible,
+    )
+
+    response = client.post(f"/api/v1/ai/assets/{asset_id}/analyze", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "openai-compatible"
+    assert data["description"] == "这是一个蓝发动漫人物参考图。"
+    assert data["tags"] == ["人物", "蓝发", "动漫"]
+    assert any(tag["name"] == "蓝发" for tag in data["asset"]["tags"])
 
 
 def test_natural_language_search_returns_semantic_matches(client: TestClient) -> None:
