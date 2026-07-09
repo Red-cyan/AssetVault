@@ -455,6 +455,27 @@ POST /api/v1/projects/{project_id}/assets
 }
 ```
 
+### 批量添加项目素材
+
+```http
+POST /api/v1/projects/{project_id}/assets/batch
+```
+
+请求：
+
+```json
+{
+  "asset_ids": ["asset-a", "asset-b"],
+  "role": "stage"
+}
+```
+
+说明：
+
+- 只会添加当前用户、未删除的素材。
+- 如果素材已经在项目中，会更新它在项目中的角色。
+- 适合在素材库多选后，把一组人物、舞台、动作或贴图素材一次性加入作品项目。
+
 ### 移除项目素材
 
 ```http

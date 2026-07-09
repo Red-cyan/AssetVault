@@ -34,6 +34,11 @@ class ProjectAssetAdd(BaseModel):
     role: str = Field(default="other", max_length=40)
 
 
+class ProjectAssetBatchAdd(BaseModel):
+    asset_ids: list[str] = Field(min_length=1, max_length=500)
+    role: str = Field(default="other", max_length=40)
+
+
 class ProjectAssetRead(BaseModel):
     role: str
     created_at: datetime

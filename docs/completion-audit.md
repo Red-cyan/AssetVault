@@ -41,7 +41,7 @@
 | 文件详情 | 已完成 | `library/page.tsx`、`AssetDetail` | 展示路径、大小、格式、缩略图、标签、备注等 |
 | 缩略图 | 已完成 | `thumbnail_service.py` | 图片缩略图稳定；视频依赖 FFmpeg |
 | 设置 | 已完成 | `settings.py`、设置页 | 支持缓存目录、主题、AI 配置、缩略图质量、数据库备份 |
-| 批量操作 | 已完成 | `PATCH /api/v1/assets/batch`、素材库页 | 支持批量收藏、批量取消收藏、批量打标签、批量移入回收站 |
+| 批量操作 | 已完成 | `PATCH /api/v1/assets/batch`、`POST /api/v1/projects/{id}/assets/batch`、素材库页 | 支持批量收藏、取消收藏、打标签、移入回收站、加入项目 |
 
 ## 3. 第二阶段 AI 审计
 
@@ -106,10 +106,10 @@
 如果继续开发，建议按以下优先级：
 
 1. **文件监听**：使用 Watchdog 监听目录变化，新增文件自动入库。
-2. **批量加入项目**：在素材库多选后直接加入指定项目。
-3. **真实 AI 接入**：基于 OpenAI Compatible API 做标签/描述生成，或用 Embedding 做自然语言搜索。
-4. **数据库迁移**：接入 Alembic，提升企业项目可信度。
-5. **前端体验统一**：统一 loading、empty、error、confirm 状态。
+2. **真实 AI 接入**：基于 OpenAI Compatible API 做标签/描述生成，或用 Embedding 做自然语言搜索。
+3. **数据库迁移**：接入 Alembic，提升企业项目可信度。
+4. **前端体验统一**：统一 loading、empty、error、confirm 状态。
+5. **模型预览增强**：为 PMX、FBX、GLB 等模型生成更真实的预览图。
 
 ## 8. 当前验证命令
 
@@ -142,6 +142,6 @@ uv run python scripts/create_demo_assets.py --force
 - 支持数字资产常见格式识别，包括图片、视频、模型、动作和 UE 资源。
 - 用 service 层封装扫描、缩略图、搜索、重复检测、失效检查、备份等能力。
 - 支持项目级素材引用和清单导出，贴近真实创作者工作流。
-- 支持素材库多选批量操作，覆盖收藏、打标签和回收站管理。
+- 支持素材库多选批量操作，覆盖收藏、打标签、加入项目和回收站管理。
 - AI 功能不是聊天壳，而是围绕素材标签、描述和搜索。
 - 补齐了测试、构建、Docker、演示数据和中文工程文档。

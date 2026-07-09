@@ -13,6 +13,7 @@ from backend.app.models import Asset, Project, ProjectAsset, User
 from backend.app.schemas.asset import AssetRead
 from backend.app.schemas.project import (
     ProjectAssetAdd,
+    ProjectAssetBatchAdd,
     ProjectAssetRead,
     ProjectCreate,
     ProjectDetail,
@@ -252,6 +253,46 @@ def add_project_asset(
         db.add(ProjectAsset(project_id=project_id, asset_id=payload.asset_id, role=payload.role))
     else:
         existing.role = payload.role
+    db.commit()
+    return get_project(project_id, db, current_user)
+
+
+@router.post("/{project_id}/assets/batch", response_model=ProjectDetail)
+def add_project_assets_batch(
+    project_id: str,
+    payload: ProjectAssetBatchAdd,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProjectDetail:
+    get_owned_project_with_assets(db, project_id=project_id, user_id=current_user.id)
+    unique_asset_ids = list(dict.fromkeys(payload.asset_ids))
+    assets = list(
+        db.scalars(
+            select(Asset).where(
+                Asset.user_id == current_user.id,
+                Asset.id.in_(unique_asset_ids),
+                Asset.is_deleted.is_(False),
+            )
+        )
+    )
+    if not assets:
+        raise HTTPException(status_code=404, detail="No matching assets found")
+
+    existing_links = {
+        link.asset_id: link
+        for link in db.scalars(
+            select(ProjectAsset).where(
+                ProjectAsset.project_id == project_id,
+                ProjectAsset.asset_id.in_([asset.id for asset in assets]),
+            )
+        )
+    }
+    for asset in assets:
+        existing = existing_links.get(asset.id)
+        if existing is None:
+            db.add(ProjectAsset(project_id=project_id, asset_id=asset.id, role=payload.role))
+        else:
+            existing.role = payload.role
     db.commit()
     return get_project(project_id, db, current_user)
 

@@ -231,6 +231,70 @@ def test_project_manifest_can_be_exported_as_json_and_csv(client: TestClient) ->
     assert response.status_code == 400
 
 
+def test_project_can_add_assets_in_batch(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        assets = [
+            Asset(
+                user_id=user_id,
+                name="character.pmx",
+                stem="character",
+                extension="pmx",
+                asset_type="model",
+                path="E:/assets/character.pmx",
+                size_bytes=1024,
+            ),
+            Asset(
+                user_id=user_id,
+                name="dance.vmd",
+                stem="dance",
+                extension="vmd",
+                asset_type="motion",
+                path="E:/assets/dance.vmd",
+                size_bytes=2048,
+            ),
+        ]
+        db.add_all(assets)
+        db.commit()
+        asset_ids = []
+        for asset in assets:
+            db.refresh(asset)
+            asset_ids.append(asset.id)
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/v1/projects",
+        headers=headers,
+        json={"name": "Batch Demo"},
+    )
+    assert response.status_code == 201
+    project_id = response.json()["id"]
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/assets/batch",
+        headers=headers,
+        json={"asset_ids": asset_ids, "role": "character"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["asset_count"] == 2
+    assert {item["asset"]["name"] for item in data["assets"]} == {"character.pmx", "dance.vmd"}
+    assert {item["role"] for item in data["assets"]} == {"character"}
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/assets/batch",
+        headers=headers,
+        json={"asset_ids": asset_ids, "role": "motion"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["asset_count"] == 2
+    assert {item["role"] for item in data["assets"]} == {"motion"}
+
+
 def test_settings_can_be_updated(client: TestClient) -> None:
     headers = register_and_login(client)
 

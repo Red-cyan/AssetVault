@@ -17,11 +17,21 @@ import {
   AssetBatchUpdateResult,
   AiAnalyzeResult,
   NaturalLanguageSearchResult,
+  Project,
   TrashSummary,
 } from "@/lib/api";
 
 type ViewMode = "grid" | "list";
 type SortBy = "name" | "size_bytes" | "file_modified_at" | "asset_type" | "last_opened_at";
+
+const ROLE_OPTIONS = [
+  ["character", "人物"],
+  ["stage", "舞台"],
+  ["motion", "动作"],
+  ["music", "音乐"],
+  ["texture", "贴图"],
+  ["other", "其他"],
+] as const;
 
 function formatSize(value: number) {
   if (value < 1024) return `${value} B`;
@@ -50,6 +60,7 @@ export default function LibraryPage() {
   const router = useRouter();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<AssetDetail | null>(null);
@@ -64,6 +75,8 @@ export default function LibraryPage() {
   const [folderPath, setFolderPath] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [bulkTagInput, setBulkTagInput] = useState("");
+  const [bulkProjectId, setBulkProjectId] = useState("");
+  const [bulkProjectRole, setBulkProjectRole] = useState("other");
   const [description, setDescription] = useState("");
   const [author, setAuthor] = useState("");
   const [rating, setRating] = useState(0);
@@ -119,8 +132,14 @@ export default function LibraryPage() {
     setTags(await apiFetch<Tag[]>("/tags"));
   }
 
+  async function loadProjects() {
+    const result = await apiFetch<Project[]>("/projects");
+    setProjects(result);
+    setBulkProjectId((projectId) => projectId || result[0]?.id || "");
+  }
+
   async function loadAll() {
-    await Promise.all([loadAssets(), loadFolders(), loadTasks(), loadTags()]);
+    await Promise.all([loadAssets(), loadFolders(), loadTasks(), loadTags(), loadProjects()]);
   }
 
   useEffect(() => {
@@ -238,6 +257,31 @@ export default function LibraryPage() {
     }
     await batchUpdate({ tag_names: tagNames });
     setBulkTagInput("");
+  }
+
+  async function batchAddToProject() {
+    if (selectedIds.length === 0) {
+      setError("请先选择素材。");
+      return;
+    }
+    if (!bulkProjectId) {
+      setError("请先创建或选择项目。");
+      return;
+    }
+    setMessage(null);
+    setError(null);
+    try {
+      const detail = await apiFetch(`/projects/${bulkProjectId}/assets/batch`, {
+        method: "POST",
+        body: JSON.stringify({ asset_ids: selectedIds, role: bulkProjectRole }),
+      });
+      const projectName = projects.find((project) => project.id === bulkProjectId)?.name ?? "项目";
+      setMessage(`已将 ${selectedIds.length} 个素材加入「${projectName}」。`);
+      void detail;
+      await loadProjects();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "加入项目失败");
+    }
   }
 
   async function addTags(event: FormEvent) {
@@ -421,6 +465,34 @@ export default function LibraryPage() {
             批量打标签
           </button>
         </form>
+        <div className="inline-form">
+          <select
+            className="select"
+            value={bulkProjectId}
+            onChange={(event) => setBulkProjectId(event.target.value)}
+          >
+            <option value="">选择项目</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="select"
+            value={bulkProjectRole}
+            onChange={(event) => setBulkProjectRole(event.target.value)}
+          >
+            {ROLE_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button className="button" onClick={() => void batchAddToProject()}>
+            加入项目
+          </button>
+        </div>
       </div>
 
       <div className="toolbar">
