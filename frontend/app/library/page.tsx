@@ -197,6 +197,18 @@ export default function LibraryPage() {
     }
   }
 
+  async function deleteFolder(folderId: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await apiFetch<void>(`/folders/${folderId}`, { method: "DELETE" });
+      await loadFolders();
+      setMessage("素材目录配置已移除，原始文件和已有素材索引不会被删除。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "移除目录失败");
+    }
+  }
+
   async function selectAsset(asset: Asset) {
     const detail = await apiFetch<AssetDetail>(`/assets/${asset.id}`);
     setSelected(detail);
@@ -710,6 +722,12 @@ export default function LibraryPage() {
                       <div className="detail-actions">
                         <button className="button secondary" onClick={() => scanFolder(folder.id)}>
                           重新扫描
+                        </button>
+                        <button
+                          className="button secondary"
+                          onClick={() => void deleteFolder(folder.id)}
+                        >
+                          移除目录
                         </button>
                       </div>
                     </div>

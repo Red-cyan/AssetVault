@@ -744,6 +744,59 @@ def test_folder_scan_marks_missing_and_restores_assets(
         db.close()
 
 
+def test_delete_folder_keeps_asset_index(client: TestClient, tmp_path: Path) -> None:
+    headers = register_and_login(client)
+    source = tmp_path / "stage.glb"
+    source.write_bytes(b"stage")
+
+    response = client.post(
+        "/api/v1/folders",
+        headers=headers,
+        json={"path": str(tmp_path), "name": "Demo Folder"},
+    )
+    assert response.status_code == 201
+    folder_id = response.json()["id"]
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset = Asset(
+            user_id=user_id,
+            folder_id=folder_id,
+            name="stage.glb",
+            stem="stage",
+            extension="glb",
+            asset_type="model",
+            path=str(source),
+            size_bytes=source.stat().st_size,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = asset.id
+    finally:
+        db.close()
+
+    response = client.delete(f"/api/v1/folders/{folder_id}", headers=headers)
+    assert response.status_code == 204
+
+    response = client.get("/api/v1/folders", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+    response = client.get(f"/api/v1/assets/{asset_id}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["name"] == "stage.glb"
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        stored = db.get(Asset, asset_id)
+        assert stored is not None
+        assert stored.folder_id is None
+    finally:
+        db.close()
+
+
 def test_missing_asset_scan_marks_and_restores_files(
     client: TestClient,
     tmp_path: Path,

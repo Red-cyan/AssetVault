@@ -2,12 +2,12 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_current_user
 from backend.app.db.session import SessionLocal, get_db
-from backend.app.models import Folder, Task, User
+from backend.app.models import Asset, Folder, Task, User
 from backend.app.schemas.folder import FolderCreate, FolderRead
 from backend.app.schemas.task import TaskRead
 from backend.app.services.asset_scanner import scan_folder
@@ -79,5 +79,6 @@ def delete_folder(
     folder = db.get(Folder, folder_id)
     if folder is None or folder.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Folder not found")
+    db.execute(update(Asset).where(Asset.folder_id == folder_id).values(folder_id=None))
     db.delete(folder)
     db.commit()
