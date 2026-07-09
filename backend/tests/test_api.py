@@ -101,6 +101,67 @@ def test_project_can_reference_asset(client: TestClient) -> None:
     assert detail["assets"][0]["asset"]["name"] == "stage.glb"
 
 
+def test_project_manifest_can_be_exported_as_json_and_csv(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset = Asset(
+            user_id=user_id,
+            name="concert_stage.glb",
+            stem="concert_stage",
+            extension="glb",
+            asset_type="model",
+            path="E:/assets/stage/concert_stage.glb",
+            size_bytes=2048,
+            file_hash="hash-stage",
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = asset.id
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/v1/projects",
+        headers=headers,
+        json={"name": "Concert Demo", "description": "Stage manifest demo"},
+    )
+    assert response.status_code == 201
+    project_id = response.json()["id"]
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/assets",
+        headers=headers,
+        json={"asset_id": asset_id, "role": "stage"},
+    )
+    assert response.status_code == 200
+
+    response = client.get(f"/api/v1/projects/{project_id}/export", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["project"]["name"] == "Concert Demo"
+    assert data["project"]["asset_count"] == 1
+    assert data["assets"][0]["name"] == "concert_stage.glb"
+    assert data["assets"][0]["role"] == "stage"
+    assert data["assets"][0]["file_hash"] == "hash-stage"
+
+    response = client.get(
+        f"/api/v1/projects/{project_id}/export?format=csv",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert "project_name,role,asset_name" in response.text
+    assert "Concert Demo,stage,concert_stage.glb" in response.text
+
+    response = client.get(
+        f"/api/v1/projects/{project_id}/export?format=xlsx",
+        headers=headers,
+    )
+    assert response.status_code == 400
+
+
 def test_settings_can_be_updated(client: TestClient) -> None:
     headers = register_and_login(client)
 

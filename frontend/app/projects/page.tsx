@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch, Asset, AssetList, getToken, Project, ProjectDetail } from "@/lib/api";
+import { API_BASE, apiFetch, Asset, AssetList, getToken, Project, ProjectDetail } from "@/lib/api";
 
 const ROLE_OPTIONS = [
   ["character", "人物"],
@@ -112,6 +112,29 @@ export default function ProjectsPage() {
     await loadProjects();
   }
 
+  async function exportProject(format: "json" | "csv") {
+    if (!selected) return;
+    setError(null);
+    const token = getToken();
+    const response = await fetch(`${API_BASE}/projects/${selected.id}/export?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      setError(await response.text());
+      return;
+    }
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `${selected.name}-manifest.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(objectUrl);
+    setMessage(`项目清单已导出为 ${format.toUpperCase()}。`);
+  }
+
   return (
     <AppShell>
       <div className="section-title">
@@ -174,6 +197,14 @@ export default function ProjectsPage() {
                   </div>
                   <button className="button secondary" onClick={deleteProject}>
                     删除项目
+                  </button>
+                </div>
+                <div className="toolbar">
+                  <button className="button secondary" onClick={() => void exportProject("json")}>
+                    导出 JSON 清单
+                  </button>
+                  <button className="button secondary" onClick={() => void exportProject("csv")}>
+                    导出 CSV 清单
                   </button>
                 </div>
                 <div className="stat-grid">

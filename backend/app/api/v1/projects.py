@@ -1,6 +1,9 @@
+import csv
+from io import StringIO
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -48,6 +51,84 @@ def serialize_project_detail(project: Project) -> ProjectDetail:
     return ProjectDetail(**data)
 
 
+def get_owned_project_with_assets(db: Session, *, project_id: str, user_id: str) -> Project:
+    project = db.scalar(
+        select(Project)
+        .options(selectinload(Project.assets).selectinload(ProjectAsset.asset))
+        .where(Project.id == project_id, Project.user_id == user_id)
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+def build_project_manifest(project: Project) -> dict:
+    return {
+        "project": {
+            "id": project.id,
+            "name": project.name,
+            "description": project.description,
+            "asset_count": len(project.assets),
+            "created_at": project.created_at.isoformat(),
+            "updated_at": project.updated_at.isoformat(),
+        },
+        "assets": [
+            {
+                "role": link.role,
+                "linked_at": link.created_at.isoformat(),
+                "id": link.asset.id,
+                "name": link.asset.name,
+                "asset_type": link.asset.asset_type,
+                "extension": link.asset.extension,
+                "path": link.asset.path,
+                "size_bytes": link.asset.size_bytes,
+                "file_hash": link.asset.file_hash,
+                "description": link.asset.description,
+                "author": link.asset.author,
+                "rating": link.asset.rating,
+                "exists_on_disk": link.asset.exists_on_disk,
+            }
+            for link in project.assets
+        ],
+    }
+
+
+def build_project_manifest_csv(project: Project) -> str:
+    output = StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "project_name",
+            "role",
+            "asset_name",
+            "asset_type",
+            "extension",
+            "size_bytes",
+            "path",
+            "file_hash",
+            "exists_on_disk",
+            "linked_at",
+        ],
+    )
+    writer.writeheader()
+    for link in project.assets:
+        writer.writerow(
+            {
+                "project_name": project.name,
+                "role": link.role,
+                "asset_name": link.asset.name,
+                "asset_type": link.asset.asset_type,
+                "extension": link.asset.extension,
+                "size_bytes": link.asset.size_bytes,
+                "path": link.asset.path,
+                "file_hash": link.asset.file_hash or "",
+                "exists_on_disk": link.asset.exists_on_disk,
+                "linked_at": link.created_at.isoformat(),
+            }
+        )
+    return output.getvalue()
+
+
 @router.get("", response_model=list[ProjectRead])
 def list_projects(
     db: Annotated[Session, Depends(get_db)],
@@ -88,14 +169,39 @@ def get_project(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProjectDetail:
-    project = db.scalar(
-        select(Project)
-        .options(selectinload(Project.assets).selectinload(ProjectAsset.asset))
-        .where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project_with_assets(db, project_id=project_id, user_id=current_user.id)
     return serialize_project_detail(project)
+
+
+@router.get("/{project_id}/export")
+def export_project_manifest(
+    project_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    format: str = "json",
+) -> Response:
+    project = get_owned_project_with_assets(db, project_id=project_id, user_id=current_user.id)
+    normalized_format = format.lower()
+    safe_name = "".join(
+        char if char.isalnum() or char in ("-", "_") else "_" for char in project.name
+    )
+
+    if normalized_format == "json":
+        return JSONResponse(
+            content=build_project_manifest(project),
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_name}-manifest.json"',
+            },
+        )
+    if normalized_format == "csv":
+        return Response(
+            content=build_project_manifest_csv(project),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_name}-manifest.csv"',
+            },
+        )
+    raise HTTPException(status_code=400, detail="Unsupported export format")
 
 
 @router.patch("/{project_id}", response_model=ProjectRead)
@@ -137,13 +243,7 @@ def add_project_asset(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProjectDetail:
-    project = db.scalar(
-        select(Project)
-        .options(selectinload(Project.assets).selectinload(ProjectAsset.asset))
-        .where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project_with_assets(db, project_id=project_id, user_id=current_user.id)
     asset = db.get(Asset, payload.asset_id)
     if asset is None or asset.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Asset not found")
