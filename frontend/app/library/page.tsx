@@ -14,6 +14,7 @@ import {
   Tag,
   Task,
   AssetCleanupResult,
+  AiAnalyzeResult,
 } from "@/lib/api";
 
 type ViewMode = "grid" | "list";
@@ -208,6 +209,24 @@ export default function LibraryPage() {
     await loadAssets();
   }
 
+  async function analyzeAsset() {
+    if (!selected) return;
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await apiFetch<AiAnalyzeResult>(`/ai/assets/${selected.id}/analyze`, {
+        method: "POST",
+      });
+      setSelected(result.asset);
+      setDescription(result.asset.description ?? "");
+      await loadTags();
+      await loadAssets();
+      setMessage(`智能分析完成：已生成 ${result.tags.length} 个标签。`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "智能分析失败");
+    }
+  }
+
   return (
     <AppShell>
       <div className="section-title">
@@ -354,6 +373,9 @@ export default function LibraryPage() {
               <div className="detail-actions">
                 <button className="button secondary" onClick={toggleFavorite}>
                   {selected.is_favorite ? "取消收藏" : "收藏"}
+                </button>
+                <button className="button secondary" onClick={analyzeAsset}>
+                  智能分析
                 </button>
                 <button className="button" onClick={saveDetails}>
                   保存详情

@@ -113,6 +113,13 @@ export type AiConnectionTestResult = {
   message: string;
 };
 
+export type AiAnalyzeResult = {
+  asset: AssetDetail;
+  tags: string[];
+  description: string;
+  source: string;
+};
+
 export function getToken() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("assetvault_token");

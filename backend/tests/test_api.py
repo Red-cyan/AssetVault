@@ -128,3 +128,33 @@ def test_settings_can_be_updated(client: TestClient) -> None:
     response = client.post("/api/v1/settings/test-ai", headers=headers)
     assert response.status_code == 200
     assert response.json()["configured"] is True
+
+
+def test_ai_analysis_generates_tags_and_description(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset = Asset(
+            user_id=user_id,
+            name="concert_stage.glb",
+            stem="concert_stage",
+            extension="glb",
+            asset_type="model",
+            path="E:/assets/stage/concert_stage.glb",
+            size_bytes=2048,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = asset.id
+    finally:
+        db.close()
+
+    response = client.post(f"/api/v1/ai/assets/{asset_id}/analyze", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "local-heuristic"
+    assert "舞台" in data["tags"]
+    assert data["asset"]["description"]
+    assert any(tag["name"] == "舞台" for tag in data["asset"]["tags"])
