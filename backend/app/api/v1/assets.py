@@ -27,6 +27,9 @@ from backend.app.services.missing_asset_service import scan_missing_assets
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
+PRIMARY_ASSET_TYPES = {"model", "motion", "ue"}
+SUPPORT_ASSET_TYPES = {"image", "video"}
+
 
 def serialize_asset_detail(asset: Asset) -> AssetDetail:
     data = AssetRead.model_validate(asset).model_dump()
@@ -77,6 +80,7 @@ def list_assets(
     tag_id: str | None = None,
     favorite: bool | None = None,
     exists_on_disk: bool | None = None,
+    scope: Literal["primary", "support", "all"] = "primary",
     sort_by: Literal[
         "name",
         "size_bytes",
@@ -106,6 +110,10 @@ def list_assets(
         )
     if asset_type:
         filters.append(Asset.asset_type == asset_type)
+    elif scope == "primary":
+        filters.append(Asset.asset_type.in_(PRIMARY_ASSET_TYPES))
+    elif scope == "support":
+        filters.append(Asset.asset_type.in_(SUPPORT_ASSET_TYPES))
     if favorite is not None:
         filters.append(Asset.is_favorite == favorite)
     if exists_on_disk is not None:

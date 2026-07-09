@@ -23,6 +23,7 @@ import {
 
 type ViewMode = "grid" | "list";
 type SortBy = "name" | "size_bytes" | "file_modified_at" | "asset_type" | "last_opened_at";
+type AssetScope = "primary" | "support" | "all";
 
 const ROLE_OPTIONS = [
   ["character", "人物"],
@@ -68,6 +69,7 @@ export default function LibraryPage() {
   const [query, setQuery] = useState("");
   const [naturalQuery, setNaturalQuery] = useState("");
   const [assetType, setAssetType] = useState("");
+  const [assetScope, setAssetScope] = useState<AssetScope>("primary");
   const [tagId, setTagId] = useState("");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>("file_modified_at");
@@ -94,10 +96,17 @@ export default function LibraryPage() {
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  async function loadAssets(nextPage = page, nextPageSize = pageSize) {
+  async function loadAssets(
+    nextPage = page,
+    nextPageSize = pageSize,
+    overrides: Partial<{ assetScope: AssetScope; assetType: string }> = {},
+  ) {
+    const nextAssetScope = overrides.assetScope ?? assetScope;
+    const nextAssetType = overrides.assetType ?? assetType;
     const params = new URLSearchParams();
     if (query) params.set("q", query);
-    if (assetType) params.set("type", assetType);
+    if (nextAssetType) params.set("type", nextAssetType);
+    params.set("scope", nextAssetScope);
     if (tagId) params.set("tag_id", tagId);
     if (favoriteOnly) params.set("favorite", "true");
     params.set("page", String(nextPage));
@@ -169,7 +178,7 @@ export default function LibraryPage() {
       await loadAssets();
     }, 1800);
     return () => window.clearInterval(timer);
-  }, [activeTask, query, assetType, tagId, favoriteOnly, sortBy, page, pageSize]);
+  }, [activeTask, query, assetType, assetScope, tagId, favoriteOnly, sortBy, page, pageSize]);
 
   useEffect(() => {
     if (!selected) return;
@@ -243,6 +252,16 @@ export default function LibraryPage() {
 
   async function changePageSize(value: number) {
     await loadAssets(1, value);
+  }
+
+  async function changeAssetScope(value: AssetScope) {
+    setAssetScope(value);
+    await loadAssets(1, pageSize, { assetScope: value });
+  }
+
+  async function changeAssetType(value: string) {
+    setAssetType(value);
+    await loadAssets(1, pageSize, { assetType: value });
   }
 
   async function goToPage(value: number) {
@@ -423,8 +442,17 @@ export default function LibraryPage() {
         />
         <select
           className="select"
+          value={assetScope}
+          onChange={(event) => void changeAssetScope(event.target.value as AssetScope)}
+        >
+          <option value="primary">主素材</option>
+          <option value="support">贴图/辅助文件</option>
+          <option value="all">全部索引</option>
+        </select>
+        <select
+          className="select"
           value={assetType}
-          onChange={(event) => setAssetType(event.target.value)}
+          onChange={(event) => void changeAssetType(event.target.value)}
         >
           <option value="">全部类型</option>
           <option value="image">图片</option>

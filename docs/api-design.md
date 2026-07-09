@@ -217,6 +217,7 @@ GET /api/v1/assets
 page=1
 page_size=60
 q=stage
+scope=primary
 type=model
 tag_id=<tag_id>
 favorite=true
@@ -233,11 +234,19 @@ sort_order=desc
 - `asset_type`
 - `last_opened_at`
 
+展示范围：
+
+- `scope=primary`：默认值，只展示模型、动作、UE 资产，适合作为素材库首页，避免一个工程里的贴图和辅助文件一股脑铺满列表。
+- `scope=support`：只展示图片、视频等贴图/辅助文件，适合专门整理贴图、参考图和视频素材。
+- `scope=all`：展示全部索引，适合审计、清理和批量维护。
+- 如果同时传入 `type=image` 这类具体类型筛选，具体类型优先。
+
 设计说明：
 
 - 查询数据库索引，不实时遍历磁盘。
 - 默认过滤回收站素材。
 - 搜索范围包含名称、路径、扩展名、作者、描述。
+- 系统仍然完整索引所有支持文件，但素材库默认按“主素材”展示，避免贴图、视频等支持文件干扰日常浏览。
 
 ### 素材详情
 

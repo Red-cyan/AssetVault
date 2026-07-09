@@ -656,6 +656,67 @@ def test_assets_can_be_updated_in_batch(client: TestClient) -> None:
     assert response.json()["total"] == 0
 
 
+def test_asset_list_defaults_to_primary_scope(client: TestClient) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        db.add_all(
+            [
+                Asset(
+                    user_id=user_id,
+                    name="character.pmx",
+                    stem="character",
+                    extension="pmx",
+                    asset_type="model",
+                    path="E:/assets/character/character.pmx",
+                    size_bytes=1024,
+                ),
+                Asset(
+                    user_id=user_id,
+                    name="dance.vmd",
+                    stem="dance",
+                    extension="vmd",
+                    asset_type="motion",
+                    path="E:/assets/motion/dance.vmd",
+                    size_bytes=512,
+                ),
+                Asset(
+                    user_id=user_id,
+                    name="body_diffuse.png",
+                    stem="body_diffuse",
+                    extension="png",
+                    asset_type="image",
+                    path="E:/assets/character/textures/body_diffuse.png",
+                    size_bytes=2048,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/assets", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert {item["name"] for item in data["items"]} == {"character.pmx", "dance.vmd"}
+
+    response = client.get("/api/v1/assets?scope=support", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "body_diffuse.png"
+
+    response = client.get("/api/v1/assets?scope=all", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 3
+
+    response = client.get("/api/v1/assets?scope=primary&type=image", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+
+
 def test_tags_can_be_updated_and_deleted(client: TestClient) -> None:
     headers = register_and_login(client)
     db = next(app.dependency_overrides[get_db]())
