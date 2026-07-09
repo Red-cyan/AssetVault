@@ -88,20 +88,29 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
     task.total = len(files)
     db.commit()
 
+    found_paths: set[str] = set()
     imported = 0
+    updated = 0
+    restored = 0
     for index, path in enumerate(files, start=1):
         stat = path.stat()
         asset_type = get_asset_type(path)
+        resolved_path = str(path.resolve())
+        found_paths.add(resolved_path)
         existing = db.scalar(
-            select(Asset).where(Asset.user_id == user_id, Asset.path == str(path.resolve()))
+            select(Asset).where(Asset.user_id == user_id, Asset.path == resolved_path)
         )
         if existing is None:
-            asset = Asset(user_id=user_id, folder_id=folder_id, path=str(path.resolve()))
+            asset = Asset(user_id=user_id, folder_id=folder_id, path=resolved_path)
             db.add(asset)
             imported += 1
         else:
             asset = existing
+            updated += 1
+            if not asset.exists_on_disk:
+                restored += 1
 
+        asset.folder_id = folder_id
         asset.name = path.name
         asset.stem = path.stem
         asset.extension = path.suffix.lower().lstrip(".")
@@ -112,6 +121,8 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
         asset.file_created_at = datetime.fromtimestamp(stat.st_ctime)
         asset.file_modified_at = datetime.fromtimestamp(stat.st_mtime)
         asset.indexed_at = datetime.utcnow()
+        asset.exists_on_disk = True
+        asset.missing_since = None
 
         db.flush()
         if asset.asset_type == "image":
@@ -128,10 +139,38 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
         if index % 25 == 0:
             db.commit()
 
+    now = datetime.utcnow()
+    folder_assets = list(
+        db.scalars(
+            select(Asset).where(
+                Asset.user_id == user_id,
+                Asset.folder_id == folder_id,
+                Asset.is_deleted.is_(False),
+            )
+        )
+    )
+    missing_marked = 0
+    for asset in folder_assets:
+        if asset.path in found_paths:
+            continue
+        if asset.exists_on_disk:
+            missing_marked += 1
+            asset.missing_since = now
+        asset.exists_on_disk = False
+
     folder.last_scanned_at = datetime.utcnow()
     task.status = "success"
     task.progress = 100
-    task.message = f"Scan completed, imported {imported} new assets"
-    task.result = {"imported": imported, "total": len(files)}
+    task.message = (
+        f"Scan completed, imported {imported}, updated {updated}, "
+        f"restored {restored}, missing {missing_marked}"
+    )
+    task.result = {
+        "imported": imported,
+        "updated": updated,
+        "restored": restored,
+        "missing_marked": missing_marked,
+        "total": len(files),
+    }
     task.finished_at = datetime.utcnow()
     db.commit()

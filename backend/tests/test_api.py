@@ -10,8 +10,9 @@ from sqlalchemy.pool import StaticPool
 from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
-from backend.app.models import Asset, AssetTag, Tag
+from backend.app.models import Asset, AssetTag, Folder, Tag, Task
 from backend.app.services.ai_analysis_service import AnalysisResult
+from backend.app.services.asset_scanner import scan_folder
 from backend.app.services.file_type_service import get_asset_type
 
 
@@ -627,6 +628,58 @@ def test_assets_can_be_updated_in_batch(client: TestClient) -> None:
     response = client.get("/api/v1/assets", headers=headers)
     assert response.status_code == 200
     assert response.json()["total"] == 0
+
+
+def test_folder_scan_marks_missing_and_restores_assets(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    headers = register_and_login(client)
+    first_file = tmp_path / "stage-a.glb"
+    second_file = tmp_path / "stage-b.glb"
+    first_file.write_bytes(b"stage-a")
+    second_file.write_bytes(b"stage-b")
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        folder = Folder(user_id=user_id, name="demo", path=str(tmp_path))
+        task = Task(user_id=user_id, type="scan", status="pending")
+        db.add_all([folder, task])
+        db.commit()
+        db.refresh(folder)
+        db.refresh(task)
+
+        scan_folder(db, task_id=task.id, user_id=user_id, folder_id=folder.id)
+        db.refresh(task)
+        assert task.result["imported"] == 2
+
+        second_file.unlink()
+        existing_asset = db.scalar(select(Asset).where(Asset.path == str(first_file.resolve())))
+        assert existing_asset is not None
+        existing_asset.exists_on_disk = False
+        db.commit()
+
+        rescan_task = Task(user_id=user_id, type="scan", status="pending")
+        db.add(rescan_task)
+        db.commit()
+        db.refresh(rescan_task)
+
+        scan_folder(db, task_id=rescan_task.id, user_id=user_id, folder_id=folder.id)
+        db.refresh(rescan_task)
+
+        restored_asset = db.scalar(select(Asset).where(Asset.path == str(first_file.resolve())))
+        missing_asset = db.scalar(select(Asset).where(Asset.path == str(second_file.resolve())))
+        assert restored_asset is not None
+        assert missing_asset is not None
+        assert restored_asset.exists_on_disk is True
+        assert restored_asset.missing_since is None
+        assert missing_asset.exists_on_disk is False
+        assert missing_asset.missing_since is not None
+        assert rescan_task.result["restored"] == 1
+        assert rescan_task.result["missing_marked"] == 1
+    finally:
+        db.close()
 
 
 def test_missing_asset_scan_marks_and_restores_files(
