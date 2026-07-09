@@ -72,6 +72,19 @@ GET /api/v1/auth/me
 - 获取当前登录用户信息。
 - 前端可用于判断 token 是否有效。
 
+### 退出登录
+
+当前版本的 JWT 是无状态 token，退出登录由前端清理本地 token 完成：
+
+```text
+localStorage.removeItem("assetvault_token")
+```
+
+说明：
+
+- 退出后前端会跳转到登录页。
+- 后续如果需要服务端强制失效 token，可以增加 token blacklist 或 refresh token 机制。
+
 ### 更新用户资料
 
 ```http

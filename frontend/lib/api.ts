@@ -193,6 +193,11 @@ export function setToken(token: string) {
   window.localStorage.setItem("assetvault_token", token);
 }
 
+export function clearToken() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem("assetvault_token");
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const response = await fetch(`${API_BASE}${path}`, {

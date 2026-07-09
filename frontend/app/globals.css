@@ -50,6 +50,8 @@ a {
 .sidebar {
   border-right: 1px solid var(--border);
   background: #ecebe6;
+  display: flex;
+  flex-direction: column;
   padding: 24px 16px;
 }
 
@@ -71,6 +73,21 @@ a {
 }
 
 .nav a:hover {
+  background: #dedcd3;
+}
+
+.logout-button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  color: #222;
+  margin-top: auto;
+  min-height: 40px;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.logout-button:hover {
   background: #dedcd3;
 }
 
