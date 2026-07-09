@@ -3,12 +3,26 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { AiConnectionTestResult, apiFetch, AppSettings, getToken } from "@/lib/api";
+import {
+  AiConnectionTestResult,
+  apiFetch,
+  AppSettings,
+  DatabaseBackupResult,
+  getToken,
+} from "@/lib/api";
+
+function formatSize(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
 
 export default function SettingsPage() {
   const router = useRouter();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [aiApiKey, setAiApiKey] = useState("");
+  const [backup, setBackup] = useState<DatabaseBackupResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +80,20 @@ export default function SettingsPage() {
       setMessage(result.message);
     } catch (err) {
       setError(err instanceof Error ? err.message : "测试失败");
+    }
+  }
+
+  async function backupDatabase() {
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await apiFetch<DatabaseBackupResult>("/settings/backup-database", {
+        method: "POST",
+      });
+      setBackup(result);
+      setMessage("数据库备份已创建。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "数据库备份失败");
     }
   }
 
@@ -160,6 +188,27 @@ export default function SettingsPage() {
                 测试 AI 配置
               </button>
             </div>
+          </section>
+
+          <section className="panel">
+            <h2>数据库备份</h2>
+            <p className="asset-sub">
+              备份会复制当前 SQLite 数据库文件，保留素材索引、标签、项目和设置。
+            </p>
+            <div className="detail-actions">
+              <button className="button secondary" type="button" onClick={() => void backupDatabase()}>
+                创建备份
+              </button>
+            </div>
+            {backup ? (
+              <div className="field">
+                <span className="label">最近备份</span>
+                <span>{backup.path}</span>
+                <span className="asset-sub">
+                  {formatSize(backup.size_bytes)} · {new Date(backup.created_at).toLocaleString("zh-CN")}
+                </span>
+              </div>
+            ) : null}
           </section>
         </form>
       ) : null}

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -24,3 +26,9 @@ class SettingsUpdate(BaseModel):
 class AiConnectionTestResult(BaseModel):
     configured: bool
     message: str
+
+
+class DatabaseBackupResult(BaseModel):
+    path: str
+    size_bytes: int
+    created_at: datetime

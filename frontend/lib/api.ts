@@ -113,6 +113,12 @@ export type AiConnectionTestResult = {
   message: string;
 };
 
+export type DatabaseBackupResult = {
+  path: string;
+  size_bytes: number;
+  created_at: string;
+};
+
 export type AiAnalyzeResult = {
   asset: AssetDetail;
   tags: string[];

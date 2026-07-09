@@ -130,6 +130,22 @@ def test_settings_can_be_updated(client: TestClient) -> None:
     assert response.json()["configured"] is True
 
 
+
+def test_database_backup_rejects_memory_database(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = register_and_login(client)
+
+    class FakeSettings:
+        database_url = "sqlite:///:memory:"
+
+    monkeypatch.setattr("backend.app.services.backup_service.get_settings", lambda: FakeSettings())
+    response = client.post("/api/v1/settings/backup-database", headers=headers)
+    assert response.status_code == 400
+    assert "内存数据库无法备份" in response.json()["detail"]
+
+
 def test_ai_analysis_generates_tags_and_description(client: TestClient) -> None:
     headers = register_and_login(client)
     db = next(app.dependency_overrides[get_db]())

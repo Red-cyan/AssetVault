@@ -8,6 +8,7 @@ __pycache__/
 .ruff_cache/
 assetvault.db
 cache/
+backups/
 node_modules/
 .next/
 dist/
