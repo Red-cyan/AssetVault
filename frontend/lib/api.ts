@@ -11,6 +11,12 @@ export type Asset = {
   file_hash: string | null;
   thumbnail_path: string | null;
   thumbnail_url: string | null;
+  extractor_name: string;
+  extraction_status: "metadata_only" | "structured" | "failed";
+  extracted_metadata: Record<string, unknown>;
+  extracted_text: string | null;
+  semantic_eligible: boolean;
+  extraction_error: string | null;
   description: string | null;
   author: string | null;
   rating: number;
@@ -134,6 +140,7 @@ export type AppSettings = {
 
 export type EmbeddingIndexStatus = {
   indexed_assets: number;
+  eligible_assets: number;
   total_assets: number;
   model: string;
   dimensions: number;

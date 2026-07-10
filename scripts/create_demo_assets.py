@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -14,6 +15,7 @@ DEMO_FILES = {
     "textures/fabric_blue_pattern.png": "image",
     "hdr/concert_hall_light_probe.hdr": "placeholder",
     "ue/ue5_stage_prop.uasset": "placeholder",
+    "ue/AssetVaultConcert.uproject": "uproject",
     "blender/lighting_setup.blend": "placeholder",
 }
 
@@ -63,6 +65,28 @@ def create_placeholder(path: Path, label: str) -> None:
     )
 
 
+def create_uproject(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "FileVersion": 3,
+                "EngineAssociation": "5.5",
+                "Category": "Virtual Production",
+                "Description": "赛博朋克演唱会舞台与虚拟制作演示工程",
+                "Modules": [{"Name": "AssetVaultConcert", "Type": "Runtime"}],
+                "Plugins": [
+                    {"Name": "Niagara", "Enabled": True},
+                    {"Name": "ControlRig", "Enabled": True},
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def create_demo_assets(output_dir: Path, *, force: bool) -> list[Path]:
     created: list[Path] = []
     image_specs = {
@@ -89,6 +113,8 @@ def create_demo_assets(output_dir: Path, *, force: bool) -> list[Path]:
             create_image(path, title, color)
         elif kind == "obj":
             create_obj(path)
+        elif kind == "uproject":
+            create_uproject(path)
         else:
             create_placeholder(path, kind)
         created.append(path)

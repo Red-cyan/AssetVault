@@ -17,6 +17,12 @@ class AssetRead(BaseModel):
     file_hash: str | None
     thumbnail_path: str | None
     thumbnail_url: str | None
+    extractor_name: str
+    extraction_status: str
+    extracted_metadata: dict
+    extracted_text: str | None
+    semantic_eligible: bool
+    extraction_error: str | None
     description: str | None
     author: str | None
     rating: int

@@ -1226,6 +1226,58 @@ def test_folder_rescan_skips_hash_and_thumbnail_for_unchanged_file(
         db.close()
 
 
+def test_folder_rescan_backfills_new_extractor_without_rehashing(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = register_and_login(client)
+    source = tmp_path / "Concert.uproject"
+    source.write_text(
+        '{"FileVersion": 3, "EngineAssociation": "5.5", '
+        '"Description": "演唱会工程"}',
+        encoding="utf-8",
+    )
+    calls = {"hash": 0}
+
+    def fake_hash(_path: Path) -> str:
+        calls["hash"] += 1
+        return "fingerprint"
+
+    monkeypatch.setattr("backend.app.services.asset_scanner.calculate_file_fingerprint", fake_hash)
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        folder = Folder(user_id=user_id, name="demo", path=str(tmp_path))
+        first_task = Task(user_id=user_id, type="scan", status="pending")
+        db.add_all([folder, first_task])
+        db.commit()
+        scan_folder(db, task_id=first_task.id, user_id=user_id, folder_id=folder.id)
+
+        asset = db.scalar(select(Asset).where(Asset.path == str(source.resolve())))
+        assert asset is not None
+        asset.extractor_name = "generic"
+        asset.extraction_status = "metadata_only"
+        asset.extracted_metadata = {}
+        asset.extracted_text = None
+        asset.semantic_eligible = False
+        db.commit()
+
+        second_task = Task(user_id=user_id, type="scan", status="pending")
+        db.add(second_task)
+        db.commit()
+        scan_folder(db, task_id=second_task.id, user_id=user_id, folder_id=folder.id)
+        db.refresh(asset)
+
+        assert calls["hash"] == 1
+        assert asset.extractor_name == "uproject-json"
+        assert asset.extracted_metadata["engine_association"] == "5.5"
+        assert asset.semantic_eligible is True
+    finally:
+        db.close()
+
+
 def test_folder_scan_records_file_failure_and_continues(
     client: TestClient,
     tmp_path: Path,

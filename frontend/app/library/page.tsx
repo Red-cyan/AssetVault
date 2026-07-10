@@ -45,6 +45,19 @@ const ROLE_OPTIONS = [
   ["other", "其他"],
 ] as const;
 
+const EXTRACTION_STATUS_LABELS: Record<Asset["extraction_status"], string> = {
+  structured: "结构化解析",
+  metadata_only: "仅元数据",
+  failed: "解析失败",
+};
+
+function formatMetadataValue(value: unknown) {
+  if (Array.isArray(value)) return value.join("、") || "-";
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 function formatSize(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
@@ -889,6 +902,28 @@ export default function LibraryPage() {
                 <span className="label">大小</span>
                 <span>{formatSize(selected.size_bytes)}</span>
               </div>
+              <div className="field">
+                <span className="label">内容解析</span>
+                <span>
+                  {EXTRACTION_STATUS_LABELS[selected.extraction_status]} · {selected.extractor_name}
+                </span>
+                <span className="asset-sub">
+                  {selected.semantic_eligible ? "可参与语义索引" : "不生成语义向量"}
+                </span>
+                {selected.extraction_error ? (
+                  <span className="asset-sub">{selected.extraction_error}</span>
+                ) : null}
+              </div>
+              {Object.keys(selected.extracted_metadata).length > 0 ? (
+                <div className="field">
+                  <span className="label">格式元数据</span>
+                  {Object.entries(selected.extracted_metadata).map(([key, value]) => (
+                    <span className="asset-sub" key={key}>
+                      {key}: {formatMetadataValue(value)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="field">
                 <span className="label">标签</span>
                 <div className="tag-row">

@@ -53,10 +53,13 @@
 | AI 自然语言搜索 | 已完成 | `embedding_service.py`、`search_service.py` | BGE-M3 + pgvector 向量检索与关键词 RRF 融合 |
 | AI 相似素材推荐 | 已完成 | `GET /search/similar/{asset_id}` | 使用 pgvector cosine distance 返回近邻素材 |
 | AI 智能分类 | 部分完成 | AI 标签和规则分析 | 当前能生成类别标签，但不是独立分类服务 |
+| 异构格式解析 | 基础框架已完成 | `asset_extractor.py`、资产详情 | PMX、VMD、FBX、Blend、UProject 使用独立提取器；不透明文件仅保留元数据 |
 
 面试表达建议：
 
 > 当前 AI 标签和描述采用建议确认流程并明确来源；语义搜索使用 BAAI/bge-m3 生成 1024 维向量，通过 PostgreSQL pgvector HNSW 与关键词结果进行 RRF 融合。
+
+语义向量只基于人工描述、正式标签、作者或格式内嵌的可靠语义文本生成。只有文件名、路径和扩展名的素材不会建立向量。
 
 ## 4. 第三阶段高级功能审计
 

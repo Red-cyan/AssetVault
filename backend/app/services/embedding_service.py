@@ -14,18 +14,28 @@ class EmbeddingModelError(RuntimeError):
     pass
 
 
-def build_asset_embedding_text(asset: Asset) -> str:
+def build_asset_embedding_text(asset: Asset) -> str | None:
     tags = "、".join(link.tag.name for link in asset.tags if link.tag)
+    has_trusted_semantics = bool(
+        asset.description
+        or asset.author
+        or tags
+        or (asset.semantic_eligible and asset.extracted_text)
+    )
+    if not has_trusted_semantics:
+        return None
     return "\n".join(
         part
         for part in [
             f"名称：{asset.name}",
             f"类型：{asset.asset_type}",
             f"格式：{asset.extension}",
+            f"格式解析内容：{asset.extracted_text}"
+            if asset.semantic_eligible and asset.extracted_text
+            else "",
             f"描述：{asset.description}" if asset.description else "",
             f"标签：{tags}" if tags else "",
             f"作者：{asset.author}" if asset.author else "",
-            f"路径：{asset.path}",
         ]
         if part
     )
@@ -121,6 +131,8 @@ def index_user_assets(
         }
         indexed = 0
         skipped = 0
+        ineligible = 0
+        removed = 0
         batch_size = max(settings.embedding_batch_size, 1)
 
         for offset in range(0, len(assets), batch_size):
@@ -135,6 +147,13 @@ def index_user_assets(
             pending: list[tuple[Asset, str, str]] = []
             for asset in batch_assets:
                 source_text = build_asset_embedding_text(asset)
+                if source_text is None:
+                    ineligible += 1
+                    row = existing.pop(asset.id, None)
+                    if row is not None:
+                        db.delete(row)
+                        removed += 1
+                    continue
                 content_hash = embedding_content_hash(source_text, settings.embedding_model)
                 row = existing.get(asset.id)
                 if (
@@ -166,10 +185,15 @@ def index_user_assets(
 
         task.status = "success"
         task.progress = 100
-        task.message = f"Semantic index ready: indexed {indexed}, skipped {skipped}"
+        task.message = (
+            f"Semantic index ready: indexed {indexed}, unchanged {skipped}, "
+            f"metadata-only {ineligible}, removed {removed}"
+        )
         task.result = {
             "indexed": indexed,
             "skipped": skipped,
+            "ineligible": ineligible,
+            "removed": removed,
             "total": len(assets),
             "model": settings.embedding_model,
             "dimensions": settings.embedding_dimensions,

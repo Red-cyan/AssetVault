@@ -22,6 +22,7 @@ class EmbeddingReindexRequest(BaseModel):
 
 class EmbeddingIndexStatus(BaseModel):
     indexed_assets: int
+    eligible_assets: int
     total_assets: int
     model: str
     dimensions: int

@@ -9,6 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.models import Asset, AssetTag, Folder, Task
+from backend.app.services.asset_extractor import extract_asset_metadata, has_format_extractor
 from backend.app.services.file_type_service import get_asset_type
 from backend.app.services.hash_service import calculate_file_fingerprint
 from backend.app.services.thumbnail_service import (
@@ -96,6 +97,16 @@ def _task_was_canceled(db: Session, task: Task) -> bool:
     return task.status == "canceled"
 
 
+def _apply_extraction(asset: Asset, path: Path) -> None:
+    extraction = extract_asset_metadata(path)
+    asset.extractor_name = extraction.extractor
+    asset.extraction_status = extraction.status
+    asset.extracted_metadata = extraction.metadata
+    asset.extracted_text = extraction.semantic_text
+    asset.semantic_eligible = extraction.semantic_eligible
+    asset.extraction_error = extraction.error
+
+
 def _index_file(
     db: Session,
     *,
@@ -129,6 +140,11 @@ def _index_file(
     asset.exists_on_disk = True
     asset.missing_since = None
     if unchanged:
+        needs_extraction = asset.extraction_status == "failed" or (
+            asset.extractor_name == "generic" and has_format_extractor(path)
+        )
+        if needs_extraction:
+            _apply_extraction(asset, path)
         return outcome
 
     asset.name = path.name
@@ -141,6 +157,8 @@ def _index_file(
     asset.file_created_at = datetime.fromtimestamp(stat.st_ctime)
     asset.file_modified_at = modified_at
     asset.indexed_at = datetime.now()
+
+    _apply_extraction(asset, path)
 
     db.flush()
     if asset.asset_type == "image":

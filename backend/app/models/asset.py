@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -28,6 +28,12 @@ class Asset(Base):
     mime_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     file_hash: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     thumbnail_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extractor_name: Mapped[str] = mapped_column(String(80), default="generic")
+    extraction_status: Mapped[str] = mapped_column(String(32), default="metadata_only", index=True)
+    extracted_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    semantic_eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     author: Mapped[str | None] = mapped_column(String(120), nullable=True)
     rating: Mapped[int] = mapped_column(Integer, default=0)

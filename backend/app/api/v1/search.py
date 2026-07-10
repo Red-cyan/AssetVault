@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_current_user
@@ -113,8 +113,21 @@ def embedding_index_status(
             Asset.is_deleted.is_(False),
         )
     ) or 0
+    eligible_assets = db.scalar(
+        select(func.count(Asset.id)).where(
+            Asset.user_id == current_user.id,
+            Asset.is_deleted.is_(False),
+            or_(
+                and_(Asset.description.is_not(None), Asset.description != ""),
+                and_(Asset.author.is_not(None), Asset.author != ""),
+                Asset.semantic_eligible.is_(True),
+                Asset.tags.any(),
+            ),
+        )
+    ) or 0
     return EmbeddingIndexStatus(
         indexed_assets=indexed_assets,
+        eligible_assets=eligible_assets,
         total_assets=total_assets,
         model=settings.embedding_model,
         dimensions=settings.embedding_dimensions,

@@ -322,7 +322,9 @@ export default function SettingsPage() {
               <div className="field">
                 <span className="label">{embeddingStatus.model}</span>
                 <span className="asset-sub">
-                  {embeddingStatus.indexed_assets} / {embeddingStatus.total_assets} 个素材 · {embeddingStatus.dimensions} 维
+                  {embeddingStatus.indexed_assets} / {embeddingStatus.eligible_assets} 个可索引素材
+                  {" · "}{embeddingStatus.total_assets - embeddingStatus.eligible_assets} 个仅元数据
+                  {" · "}{embeddingStatus.dimensions} 维
                 </span>
               </div>
             ) : null}
