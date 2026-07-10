@@ -1,5 +1,6 @@
 import os
 from collections.abc import Generator
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,11 @@ from backend.app.services.ai_analysis_service import AiAnalysisError, AnalysisRe
 from backend.app.services.asset_scanner import scan_folder
 from backend.app.services.embedding_service import index_user_assets
 from backend.app.services.file_type_service import get_asset_type
+from backend.app.services.task_queue import (
+    claim_next_task,
+    finalize_or_retry,
+    recover_stale_tasks,
+)
 
 TEST_DATABASE_URL = os.getenv(
     "ASSETVAULT_TEST_DATABASE_URL",
@@ -1414,6 +1420,109 @@ def test_scan_task_conflict_cancel_and_retry(client: TestClient, tmp_path: Path)
     assert response.status_code == 202
     assert response.json()["status"] == "pending"
     assert response.json()["payload"]["retry_of"] == task_id
+
+
+def test_persistent_task_claim_and_stale_recovery(client: TestClient) -> None:
+    headers = register_and_login(client)
+    now = datetime.now()
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        ready = Task(
+            user_id=user_id,
+            type="embedding",
+            status="pending",
+            payload={"force": False},
+            available_at=now - timedelta(seconds=1),
+        )
+        future = Task(
+            user_id=user_id,
+            type="embedding",
+            status="pending",
+            payload={"force": True},
+            available_at=now + timedelta(minutes=5),
+        )
+        stale = Task(
+            user_id=user_id,
+            type="scan",
+            status="running",
+            payload={"folder_id": "stale"},
+            attempts=1,
+            heartbeat_at=now - timedelta(hours=1),
+            worker_id="dead-worker",
+        )
+        healthy = Task(
+            user_id=user_id,
+            type="scan",
+            status="running",
+            payload={"folder_id": "healthy"},
+            attempts=1,
+            heartbeat_at=now,
+            worker_id="live-worker",
+        )
+        db.add_all([ready, future, stale, healthy])
+        db.commit()
+        ready_id = ready.id
+        future_id = future.id
+        stale_id = stale.id
+        healthy_id = healthy.id
+
+        claim = claim_next_task(db, worker_id="test-worker", now=now)
+        assert claim is not None
+        assert claim.id == ready_id
+        claimed = db.get(Task, ready_id)
+        assert claimed is not None
+        assert claimed.status == "running"
+        assert claimed.attempts == 1
+        assert claimed.worker_id == "test-worker"
+        assert claim_next_task(db, worker_id="test-worker", now=now) is None
+        assert db.get(Task, future_id).status == "pending"
+
+        recovered = recover_stale_tasks(
+            db,
+            stale_before=now - timedelta(minutes=15),
+            now=now,
+        )
+        assert recovered == 1
+        assert db.get(Task, stale_id).status == "pending"
+        assert db.get(Task, stale_id).worker_id is None
+        assert db.get(Task, healthy_id).status == "running"
+        assert db.get(Task, healthy_id).worker_id == "live-worker"
+
+        retrying = Task(
+            user_id=user_id,
+            type="embedding",
+            status="failed",
+            attempts=1,
+            max_attempts=2,
+            error="temporary failure",
+            worker_id="test-worker",
+        )
+        exhausted = Task(
+            user_id=user_id,
+            type="embedding",
+            status="failed",
+            attempts=2,
+            max_attempts=2,
+            error="permanent failure",
+            worker_id="test-worker",
+        )
+        db.add_all([retrying, exhausted])
+        db.commit()
+        retrying_id = retrying.id
+        exhausted_id = exhausted.id
+
+        finalize_or_retry(db, retrying_id)
+        finalize_or_retry(db, exhausted_id)
+        db.refresh(retrying)
+        db.refresh(exhausted)
+        assert retrying.status == "pending"
+        assert retrying.worker_id is None
+        assert retrying.available_at > retrying.created_at
+        assert exhausted.status == "failed"
+        assert exhausted.worker_id is None
+    finally:
+        db.close()
 
 
 def test_delete_folder_keeps_asset_index(client: TestClient, tmp_path: Path) -> None:

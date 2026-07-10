@@ -1,13 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_current_user
 from backend.app.api.v1.assets import list_assets
 from backend.app.core.config import get_settings
-from backend.app.db.session import SessionLocal, get_db
+from backend.app.db.session import get_db
 from backend.app.models import Asset, AssetEmbedding, Task, User
 from backend.app.schemas.asset import AssetListResponse
 from backend.app.schemas.search import (
@@ -18,18 +18,11 @@ from backend.app.schemas.search import (
     SimilarAssetsResponse,
 )
 from backend.app.schemas.task import TaskRead
-from backend.app.services.embedding_service import EmbeddingModelError, index_user_assets
+from backend.app.services.embedding_service import EmbeddingModelError
 from backend.app.services.search_service import find_similar_assets, natural_language_search
+from backend.app.services.task_queue import task_worker
 
 router = APIRouter(prefix="/search", tags=["search"])
-
-
-def run_embedding_task(task_id: str, user_id: str, force: bool) -> None:
-    db = SessionLocal()
-    try:
-        index_user_assets(db, task_id=task_id, user_id=user_id, force=force)
-    finally:
-        db.close()
 
 
 def create_embedding_task(db: Session, *, user_id: str, force: bool) -> Task:
@@ -141,12 +134,11 @@ def embedding_index_status(
 )
 def reindex_embeddings(
     payload: EmbeddingReindexRequest,
-    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Task:
     task = create_embedding_task(db, user_id=current_user.id, force=payload.force)
-    background_tasks.add_task(run_embedding_task, task.id, current_user.id, payload.force)
+    task_worker.notify()
     return task
 
 

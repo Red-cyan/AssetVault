@@ -741,7 +741,8 @@ GET /api/v1/tasks/{task_id}
 
 - 查看扫描任务状态。
 - 前端可以轮询展示进度。
-- 任务中心页面会展示最近 50 条任务的状态、进度、结果和错误信息。
+- 任务中心页面会展示最近 50 条任务的状态、尝试次数、心跳、进度、结果和错误信息。
+- 扫描和 Embedding 请求先写入 PostgreSQL `tasks` 表，再由持久化 Worker 原子领取。
 
 任务状态：
 
@@ -750,6 +751,13 @@ GET /api/v1/tasks/{task_id}
 - `success`
 - `failed`
 - `canceled`
+
+调度字段：
+
+- `attempts / max_attempts`：当前已执行次数和最大自动尝试次数。
+- `available_at`：延迟重试后允许再次领取的 UTC 时间。
+- `heartbeat_at`：执行中的最近心跳，用于识别服务中断留下的僵尸任务。
+- `worker_id`：当前领取任务的 Worker；任务结束后清空。
 
 ## 16. 错误约定
 

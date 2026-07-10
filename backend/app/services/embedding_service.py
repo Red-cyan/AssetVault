@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from datetime import datetime
 from functools import lru_cache
 from hashlib import sha256
 
@@ -7,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.config import get_settings
+from backend.app.core.time import utc_now
 from backend.app.models import Asset, AssetEmbedding, AssetTag, Task
 
 
@@ -103,7 +103,8 @@ def index_user_assets(
         return
 
     task.status = "running"
-    task.started_at = datetime.now()
+    task.started_at = utc_now()
+    task.heartbeat_at = task.started_at
     task.message = f"Loading {settings.embedding_model}"
     db.commit()
 
@@ -121,6 +122,7 @@ def index_user_assets(
         )
         task.total = len(assets)
         task.message = "Generating semantic index"
+        task.heartbeat_at = utc_now()
         db.commit()
 
         existing = {
@@ -138,7 +140,7 @@ def index_user_assets(
         for offset in range(0, len(assets), batch_size):
             if _task_was_canceled(db, task):
                 task.message = "Embedding indexing canceled"
-                task.finished_at = datetime.now()
+                task.finished_at = utc_now()
                 task.result = {"indexed": indexed, "skipped": skipped, "total": len(assets)}
                 db.commit()
                 return
@@ -181,6 +183,7 @@ def index_user_assets(
 
             task.processed = min(offset + len(batch_assets), len(assets))
             task.progress = int(task.processed / max(task.total, 1) * 100)
+            task.heartbeat_at = utc_now()
             db.commit()
 
         task.status = "success"
@@ -198,7 +201,8 @@ def index_user_assets(
             "model": settings.embedding_model,
             "dimensions": settings.embedding_dimensions,
         }
-        task.finished_at = datetime.now()
+        task.heartbeat_at = utc_now()
+        task.finished_at = utc_now()
         db.commit()
     except Exception as error:
         db.rollback()
@@ -207,5 +211,6 @@ def index_user_assets(
             task.status = "failed"
             task.error = str(error)
             task.message = "Semantic indexing failed"
-            task.finished_at = datetime.now()
+            task.heartbeat_at = utc_now()
+            task.finished_at = utc_now()
             db.commit()

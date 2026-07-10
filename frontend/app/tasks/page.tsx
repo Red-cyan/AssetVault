@@ -124,6 +124,9 @@ export default function TasksPage() {
                 <span className={`status-pill status-${task.status}`}>
                   {STATUS_LABELS[task.status] ?? task.status}
                 </span>
+                <span className="asset-sub">
+                  尝试 {task.attempts}/{task.max_attempts}
+                </span>
                 <span className="detail-actions">
                   {task.status === "pending" || task.status === "running" ? (
                     <button
@@ -134,7 +137,7 @@ export default function TasksPage() {
                       <XCircle size={16} />
                     </button>
                   ) : null}
-                  {task.type === "scan" &&
+                  {(task.type === "scan" || task.type === "embedding") &&
                   task.status !== "pending" &&
                   task.status !== "running" ? (
                     <button
@@ -159,6 +162,8 @@ export default function TasksPage() {
               </span>
               <span className="asset-sub">
                 创建：{formatDate(task.created_at)}
+                <br />
+                心跳：{formatDate(task.heartbeat_at)}
                 <br />
                 完成：{formatDate(task.finished_at)}
               </span>

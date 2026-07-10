@@ -25,6 +25,19 @@ postgresql+psycopg://assetvault:assetvault@127.0.0.1:5432/assetvault
 http://127.0.0.1:8000
 ```
 
+后端启动时会同时启动 PostgreSQL 持久化任务 Worker。扫描和 Embedding API 只创建任务，
+Worker 随后原子领取并执行；服务中断时任务记录不会丢失。可按需要调整：
+
+```text
+ASSETVAULT_TASK_WORKER_ENABLED=true
+ASSETVAULT_TASK_WORKER_POLL_SECONDS=1
+ASSETVAULT_TASK_STALE_AFTER_SECONDS=900
+ASSETVAULT_TASK_RETRY_DELAY_SECONDS=5
+```
+
+`TASK_STALE_AFTER_SECONDS` 应大于单批 Embedding 或扫描进度提交的最长间隔，避免仍在工作的
+任务被误判为僵尸任务。仅运行 API、不执行后台任务的实例可以关闭 Worker。
+
 ### 1.2 前端
 
 ```bash

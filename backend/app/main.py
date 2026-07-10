@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -18,11 +20,26 @@ from backend.app.api.v1 import (
 )
 from backend.app.api.v1 import settings as settings_api
 from backend.app.core.config import get_settings
+from backend.app.db.session import get_db
+from backend.app.services.task_queue import task_worker
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    start_worker = settings.task_worker_enabled and get_db not in app.dependency_overrides
+    if start_worker:
+        task_worker.start()
+    try:
+        yield
+    finally:
+        if start_worker:
+            task_worker.stop()
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app_name)
+    app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins,

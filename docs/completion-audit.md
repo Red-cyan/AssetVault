@@ -71,7 +71,7 @@
 | 回收站 | 已完成 | `trash.py`、回收站页 | 软删除索引、恢复、永久删除索引 |
 | 统计页面 | 已完成 | `stats.py`、统计页 | 支持总数、容量、类型分布、扩展名排行 |
 | 数据库备份 | 已完成 | `backup_service.py`、设置页 | 支持 SQLite 文件备份 |
-| 任务中心 | 已完成 | `tasks.py`、任务页 | 展示最近任务、运行状态、进度、结果和错误 |
+| 任务中心 | 已完成 | `tasks.py`、`task_queue.py`、任务页 | 展示等待、领取、尝试次数、心跳、进度、结果和错误 |
 
 ## 5. 工程化审计
 
@@ -88,7 +88,7 @@
 | 面试文档 | 已完成 | `docs/interview-guide.md` | 覆盖讲解稿和高频追问 |
 | 部署文档 | 已完成 | `docs/deployment.md` | 覆盖本地和 Docker 运行方式 |
 | 数据迁移 | 待增强 | 无 Alembic | 当前通过 SQLAlchemy 建表和运行时 schema 修补 |
-| 异步队列 | 待增强 | FastAPI BackgroundTasks | 当前扫描使用后台任务，未接 Redis/Celery |
+| 持久化任务队列 | 已完成 | `task_queue.py`、PostgreSQL tasks 表 | 使用行锁原子领取，支持重试、取消、心跳和重启恢复，无需额外 Redis |
 
 ## 6. 面试展示建议流程
 

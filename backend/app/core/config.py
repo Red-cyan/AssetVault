@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     embedding_device: str = "cpu"
     embedding_batch_size: int = 16
     model_cache_dir: Path = Path("./cache/models")
+    task_worker_enabled: bool = True
+    task_worker_poll_seconds: float = 1.0
+    task_stale_after_seconds: int = 900
+    task_retry_delay_seconds: int = 5
     allowed_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     allowed_origin_regex: str = r"http://(localhost|127\.0\.0\.1):\d+"
     auth_mode: Literal["local", "password"] = "local"

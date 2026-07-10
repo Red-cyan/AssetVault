@@ -8,6 +8,7 @@ from threading import Lock
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.time import utc_now
 from backend.app.models import Asset, AssetTag, Folder, Task
 from backend.app.services.asset_extractor import (
     extract_asset_metadata,
@@ -180,7 +181,8 @@ def _mark_task_failed(db: Session, task: Task, error: str) -> None:
     task.status = "failed"
     task.error = error
     task.message = "Scan failed"
-    task.finished_at = datetime.now()
+    task.heartbeat_at = utc_now()
+    task.finished_at = utc_now()
     db.commit()
 
 
@@ -197,7 +199,8 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
 
     try:
         task.status = "running"
-        task.started_at = datetime.now()
+        task.started_at = utc_now()
+        task.heartbeat_at = task.started_at
         task.message = "Scanning files"
         db.commit()
 
@@ -207,6 +210,7 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
             return
 
         task.total = count_supported_files(root)
+        task.heartbeat_at = utc_now()
         db.commit()
 
         counters = {"imported": 0, "updated": 0, "unchanged": 0, "restored": 0}
@@ -230,7 +234,7 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
         ):
             if _task_was_canceled(db, task):
                 task.message = "Scan canceled"
-                task.finished_at = datetime.now()
+                task.finished_at = utc_now()
                 task.result = {
                     **counters,
                     "failed": failed_count,
@@ -270,11 +274,12 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
             task.processed = index
             task.progress = int(index / max(task.total, 1) * 100)
             if index % 25 == 0:
+                task.heartbeat_at = utc_now()
                 db.commit()
 
         if _task_was_canceled(db, task):
             task.message = "Scan canceled"
-            task.finished_at = datetime.now()
+            task.finished_at = utc_now()
             task.result = {
                 **counters,
                 "failed": failed_count,
@@ -316,7 +321,8 @@ def scan_folder(db: Session, *, task_id: str, user_id: str, folder_id: str) -> N
             "failures": failures,
             "total": task.total,
         }
-        task.finished_at = datetime.now()
+        task.heartbeat_at = utc_now()
+        task.finished_at = utc_now()
         db.commit()
     except Exception as error:
         db.rollback()

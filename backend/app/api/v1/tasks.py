@@ -1,16 +1,17 @@
-from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_current_user
-from backend.app.api.v1.folders import create_scan_task, run_scan_task
-from backend.app.api.v1.search import create_embedding_task, run_embedding_task
+from backend.app.api.v1.folders import create_scan_task
+from backend.app.api.v1.search import create_embedding_task
+from backend.app.core.time import utc_now
 from backend.app.db.session import get_db
 from backend.app.models import Folder, Task, User
 from backend.app.schemas.task import TaskRead
+from backend.app.services.task_queue import task_worker
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -58,7 +59,7 @@ def cancel_task(
         )
     task.status = "canceled"
     task.message = "Cancellation requested"
-    task.finished_at = datetime.now()
+    task.finished_at = utc_now()
     db.commit()
     db.refresh(task)
     return task
@@ -67,7 +68,6 @@ def cancel_task(
 @router.post("/{task_id}/retry", response_model=TaskRead, status_code=status.HTTP_202_ACCEPTED)
 def retry_task(
     task_id: str,
-    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Task:
@@ -85,7 +85,7 @@ def retry_task(
         task.payload = {**(task.payload or {}), "retry_of": previous.id}
         db.commit()
         db.refresh(task)
-        background_tasks.add_task(run_embedding_task, task.id, current_user.id, force)
+        task_worker.notify()
         return task
 
     folder_id = previous.payload.get("folder_id") if previous.payload else None
@@ -97,5 +97,5 @@ def retry_task(
     task.payload = {**(task.payload or {}), "retry_of": previous.id}
     db.commit()
     db.refresh(task)
-    background_tasks.add_task(run_scan_task, task.id, current_user.id, folder.id)
+    task_worker.notify()
     return task

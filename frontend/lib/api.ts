@@ -76,6 +76,11 @@ export type Task = {
   error: string | null;
   payload: Record<string, unknown> | null;
   result: Record<string, unknown> | null;
+  attempts: number;
+  max_attempts: number;
+  available_at: string;
+  heartbeat_at: string | null;
+  worker_id: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

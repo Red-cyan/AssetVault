@@ -1,26 +1,18 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_current_user
-from backend.app.db.session import SessionLocal, get_db
+from backend.app.db.session import get_db
 from backend.app.models import Asset, Folder, Task, User
 from backend.app.schemas.folder import FolderCreate, FolderRead
 from backend.app.schemas.task import TaskRead
-from backend.app.services.asset_scanner import scan_folder
+from backend.app.services.task_queue import task_worker
 
 router = APIRouter(prefix="/folders", tags=["folders"])
-
-
-def run_scan_task(task_id: str, user_id: str, folder_id: str) -> None:
-    db = SessionLocal()
-    try:
-        scan_folder(db, task_id=task_id, user_id=user_id, folder_id=folder_id)
-    finally:
-        db.close()
 
 
 def find_active_folder_scan(db: Session, *, user_id: str, folder_id: str) -> Task | None:
@@ -83,7 +75,6 @@ def create_folder(
 @router.post("/{folder_id}/scan", response_model=TaskRead, status_code=status.HTTP_202_ACCEPTED)
 def scan(
     folder_id: str,
-    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Task:
@@ -91,7 +82,7 @@ def scan(
     if folder is None or folder.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Folder not found")
     task = create_scan_task(db, user_id=current_user.id, folder=folder)
-    background_tasks.add_task(run_scan_task, task.id, current_user.id, folder.id)
+    task_worker.notify()
     return task
 
 
