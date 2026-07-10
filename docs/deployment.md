@@ -8,13 +8,15 @@
 
 ```bash
 uv sync
+docker compose up -d postgres
+uv run alembic upgrade head
 uv run uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-后端默认使用 SQLite：
+后端默认连接本机 PostgreSQL：
 
 ```text
-assetvault.db
+postgresql+psycopg://assetvault:assetvault@127.0.0.1:5432/assetvault
 ```
 
 默认 API 地址：
@@ -51,6 +53,7 @@ copy .env.example .env
 
 ```text
 ASSETVAULT_SECRET_KEY=replace-with-a-long-random-secret
+ASSETVAULT_AUTH_MODE=local
 ASSETVAULT_ASSET_ROOT=./demo-assets
 NEXT_PUBLIC_API_BASE=http://localhost:8000/api/v1
 ```
@@ -70,6 +73,17 @@ API Docs: http://localhost:8000/docs
 ```
 
 ## 3. 素材目录挂载
+
+### 3.1 认证模式与网络边界
+
+`local` 是默认模式，无需登录，仅适合受信任的单机环境。Docker Compose 的前后端端口
+默认绑定到 `127.0.0.1`，不要将免登录后端直接暴露到局域网或公网。
+
+远程访问必须设置 `ASSETVAULT_AUTH_MODE=password` 并配置高强度
+`ASSETVAULT_SECRET_KEY`。密码模式保留注册、JWT 登录和按用户隔离数据库记录的能力，
+但这种隔离不等同于操作系统级文件权限隔离；后端进程能够读取的挂载目录仍属于同一主机权限边界。
+
+如果本地数据库已有多个用户，必须通过 `ASSETVAULT_LOCAL_USER_ID` 明确选择工作区用户。
 
 Docker Compose 默认将：
 
@@ -103,18 +117,19 @@ ASSETVAULT_ASSET_ROOT=E:\Assets
 
 ## 4. 数据持久化
 
-Compose 使用三个 volume：
+Compose 使用四个 volume：
 
 ```text
-assetvault-data      SQLite 数据库
+assetvault-postgres  PostgreSQL 数据
 assetvault-cache     缩略图缓存
 assetvault-backups   数据库备份
+assetvault-models    BGE-M3 模型缓存
 ```
 
-默认数据库路径：
+默认数据库服务：
 
 ```text
-/app/data/assetvault.db
+postgres:5432/assetvault
 ```
 
 默认缩略图目录：
@@ -165,4 +180,4 @@ docker compose config
 
 ## 7. 说明
 
-当前版本为了方便本地演示，默认使用 SQLite。后续可以升级为 PostgreSQL + pgvector，并将自然语言搜索替换为真实 Embedding 检索。
+当前版本使用 PostgreSQL 17 + pgvector，基于 BAAI/bge-m3 生成 1024 维素材向量，并提供混合检索和相似素材接口。首次构建语义索引会下载模型到持久化缓存。

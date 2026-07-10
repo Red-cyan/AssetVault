@@ -5,8 +5,8 @@ AssetVault is an AI Digital Asset Manager for UE5, Blender & MMD.
 当前版本是按 `docs/development-plan.md` 启动的 MVP，已经包含：
 
 - FastAPI 后端
-- SQLite 开发数据库
-- JWT 登录
+- PostgreSQL 17 + pgvector 数据库
+- 默认免登录的本地工作区，可选 JWT 密码认证
 - 本地素材目录扫描
 - 素材索引、列表、详情、搜索
 - 标签绑定
@@ -21,6 +21,8 @@ AssetVault 面向 UE5、Blender、MMD 等数字内容创作者。它不会移动
 
 ```bash
 uv sync
+docker compose up -d postgres
+uv run alembic upgrade head
 uv run uvicorn backend.app.main:app --reload
 ```
 
@@ -80,9 +82,18 @@ uv run python scripts/create_demo_assets.py
 docs/demo-assets.md
 ```
 
-## 开发账号
+## 运行模式
 
-前端登录页默认使用：
+默认 `ASSETVAULT_AUTH_MODE=local`，启动后直接进入本地工作区。系统会优先使用
+`local` 用户；如果数据库中只有一个已有用户，则复用该用户，保证历史素材和设置可见。
+
+需要从其他设备远程访问时，必须启用密码模式：
+
+```text
+ASSETVAULT_AUTH_MODE=password
+```
+
+密码模式下，前端登录页默认使用：
 
 ```text
 username: demo
@@ -90,6 +101,9 @@ password: assetvault
 ```
 
 如果账号不存在，前端会自动注册该开发账号再登录。
+
+本地模式没有认证安全边界，只适用于受信任的单机环境。Compose 默认只监听
+`127.0.0.1`。JWT 用户隔离仅约束数据库业务数据，不提供操作系统级文件权限隔离。
 
 ## 当前能力
 
@@ -100,14 +114,14 @@ password: assetvault
 - 项目管理：创建和编辑作品项目，并按人物、舞台、动作、音乐等角色引用素材，支持导出项目素材清单。
 - 任务中心：查看扫描和同步任务的状态、进度、结果和错误信息。
 - 统计页：展示素材总数、容量、类型分布、扩展名分布、收藏数和近 7 天新增。
-- 设置系统：保存缓存目录、主题、缩略图质量、OpenAI Compatible API 配置和模型名，支持 SQLite 数据库备份。
-- 智能分析：在素材详情中一键生成标签和描述，已支持 OpenAI Compatible 调用，未配置或调用失败时回退本地规则。
-- 自然语言搜索：支持“找一个适合演唱会的大舞台”这类查询，当前使用本地语义解析和评分，后续可替换为 Embedding 检索。
+- 设置系统：保存缓存目录、主题、缩略图质量和 OpenAI Compatible 分析配置，支持 PostgreSQL 自定义格式备份。
+- 智能分析：生成带来源信息的标签和描述建议，用户确认后才写入；远端调用失败不会静默伪装成本地 AI 结果。
+- 语义检索：使用 `BAAI/bge-m3` 生成 1024 维向量，存入 pgvector，并通过 RRF 融合关键词与 HNSW 向量排序。
 - 重复检测：计算文件快速指纹，按指纹和大小发现重复素材，适合清理重复 PMX、PNG、视频等文件。
 - 回收站：删除素材时默认只移入数据库回收站，不删除磁盘文件，支持恢复和永久删除索引。
 - 失效素材检查：检测数据库索引对应的原始文件是否仍在磁盘上，发现被移动或删除的素材并集中处理。
 - 缩略图：图片自动生成缩略图；如果本机安装了 FFmpeg，视频也会生成缩略图。
-- 工程基础：JWT 登录与退出、SQLite 开发数据库、FastAPI 分层结构、Next.js 前端、后端测试。
+- 工程基础：本地免登录/JWT 密码认证双模式、PostgreSQL + pgvector、Alembic、FastAPI 分层结构、Next.js 前端和后端测试。
 
 ## 验证命令
 
@@ -130,4 +144,4 @@ docker compose config
 - AI 应用：智能分析可调用 OpenAI Compatible API 生成标签和描述，自然语言搜索返回素材结果，而不是聊天。
 - 工程设计：不移动原文件；扫描、缩略图、重复检测、失效检查都围绕索引实现。
 - 数据安全：回收站只删除索引不删除磁盘文件；支持数据库备份。
-- 可扩展性：当前使用 SQLite 和本地语义规则，后续可替换为 PostgreSQL、pgvector 和真实 Embedding 检索。
+- 检索能力：BGE-M3 与 pgvector 已落地；后续可增加离线 Recall@10 评测集和向量索引参数调优。

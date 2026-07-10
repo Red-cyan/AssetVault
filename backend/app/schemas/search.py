@@ -13,4 +13,22 @@ class NaturalLanguageSearchResponse(BaseModel):
     total: int
     query: str
     interpreted_keywords: list[str]
-    mode: str = "local-semantic"
+    mode: str
+
+
+class EmbeddingReindexRequest(BaseModel):
+    force: bool = False
+
+
+class EmbeddingIndexStatus(BaseModel):
+    indexed_assets: int
+    total_assets: int
+    model: str
+    dimensions: int
+
+
+class SimilarAssetsResponse(BaseModel):
+    source_asset_id: str
+    items: list[AssetRead]
+    total: int
+    model: str

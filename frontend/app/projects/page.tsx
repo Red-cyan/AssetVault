@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { API_BASE, apiFetch, Asset, AssetList, getToken, Project, ProjectDetail } from "@/lib/api";
 
@@ -26,7 +25,6 @@ function roleLabel(role: string) {
 }
 
 export default function ProjectsPage() {
-  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<ProjectDetail | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -63,10 +61,6 @@ export default function ProjectsPage() {
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
     void Promise.all([loadProjects(), searchAssets()]).catch((err) =>
       setError(err instanceof Error ? err.message : "加载项目失败"),
     );

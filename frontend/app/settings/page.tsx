@@ -1,14 +1,15 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import {
   AiConnectionTestResult,
   apiFetch,
   AppSettings,
   DatabaseBackupResult,
-  getToken,
+  EmbeddingIndexStatus,
+  getRuntimeInfo,
+  RuntimeInfo,
   UserProfile,
 } from "@/lib/api";
 
@@ -20,28 +21,32 @@ function formatSize(value: number) {
 }
 
 export default function SettingsPage() {
-  const router = useRouter();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
   const [aiApiKey, setAiApiKey] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [backup, setBackup] = useState<DatabaseBackupResult | null>(null);
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingIndexStatus | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
-    Promise.all([apiFetch<AppSettings>("/settings"), apiFetch<UserProfile>("/auth/me")])
-      .then(([settingsResult, profileResult]) => {
+    Promise.all([
+      apiFetch<AppSettings>("/settings"),
+      apiFetch<UserProfile>("/auth/me"),
+      getRuntimeInfo(),
+      apiFetch<EmbeddingIndexStatus>("/search/embeddings/status"),
+    ])
+      .then(([settingsResult, profileResult, runtimeResult, embeddingResult]) => {
         setSettings(settingsResult);
         setProfile(profileResult);
+        setRuntime(runtimeResult);
+        setEmbeddingStatus(embeddingResult);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "加载设置失败"));
-  }, [router]);
+  }, []);
 
   function updateField<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     if (!settings) return;
@@ -59,7 +64,6 @@ export default function SettingsPage() {
         theme: settings.theme,
         ai_base_url: settings.ai_base_url,
         ai_chat_model: settings.ai_chat_model,
-        ai_embedding_model: settings.ai_embedding_model,
         thumbnail_quality: settings.thumbnail_quality,
       };
       if (aiApiKey.trim()) {
@@ -85,15 +89,33 @@ export default function SettingsPage() {
     try {
       const updated = await apiFetch<UserProfile>("/users/me", {
         method: "PATCH",
-        body: JSON.stringify({
-          email: profile.email || null,
-          display_name: profile.display_name || profile.username,
-        }),
+        body: JSON.stringify(
+          runtime?.auth_mode === "password"
+            ? {
+                email: profile.email || null,
+                display_name: profile.display_name || profile.username,
+              }
+            : { display_name: profile.display_name || profile.username },
+        ),
       });
       setProfile(updated);
       setMessage("用户资料已保存。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存用户资料失败");
+    }
+  }
+
+  async function rebuildEmbeddingIndex() {
+    setError(null);
+    setMessage(null);
+    try {
+      await apiFetch("/search/embeddings/reindex", {
+        method: "POST",
+        body: JSON.stringify({ force: false }),
+      });
+      setMessage("语义索引任务已创建，可在任务中心查看模型下载和索引进度。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建语义索引任务失败");
     }
   }
 
@@ -152,18 +174,22 @@ export default function SettingsPage() {
 
       {error ? <p className="asset-sub">{error}</p> : null}
       {message ? <p className="asset-sub">{message}</p> : null}
-      {!settings || !profile ? <p className="asset-sub">正在加载设置。</p> : null}
+      {!settings || !profile || !runtime ? <p className="asset-sub">正在加载设置。</p> : null}
 
-      {settings && profile ? (
+      {settings && profile && runtime ? (
         <div className="stack">
           <form className="panel" onSubmit={saveProfile}>
-            <h2>用户资料</h2>
+            <h2>{runtime.auth_mode === "local" ? "工作区" : "用户资料"}</h2>
+            {runtime.auth_mode === "password" ? (
+              <label className="field">
+                <span className="label">用户名</span>
+                <input className="input" value={profile.username} disabled />
+              </label>
+            ) : null}
             <label className="field">
-              <span className="label">用户名</span>
-              <input className="input" value={profile.username} disabled />
-            </label>
-            <label className="field">
-              <span className="label">显示名称</span>
+              <span className="label">
+                {runtime.auth_mode === "local" ? "工作区名称" : "显示名称"}
+              </span>
               <input
                 className="input"
                 value={profile.display_name ?? ""}
@@ -172,45 +198,49 @@ export default function SettingsPage() {
                 }
               />
             </label>
-            <label className="field">
-              <span className="label">邮箱</span>
-              <input
-                className="input"
-                type="email"
-                value={profile.email ?? ""}
-                onChange={(event) => setProfile({ ...profile, email: event.target.value })}
-              />
-            </label>
+            {runtime.auth_mode === "password" ? (
+              <label className="field">
+                <span className="label">邮箱</span>
+                <input
+                  className="input"
+                  type="email"
+                  value={profile.email ?? ""}
+                  onChange={(event) => setProfile({ ...profile, email: event.target.value })}
+                />
+              </label>
+            ) : null}
             <button className="button" type="submit">
-              保存用户资料
+              {runtime.auth_mode === "local" ? "保存工作区名称" : "保存用户资料"}
             </button>
           </form>
 
-          <form className="panel" onSubmit={changePassword}>
-            <h2>密码安全</h2>
-            <label className="field">
-              <span className="label">当前密码</span>
-              <input
-                className="input"
-                type="password"
-                value={currentPassword}
-                onChange={(event) => setCurrentPassword(event.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span className="label">新密码</span>
-              <input
-                className="input"
-                type="password"
-                minLength={6}
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-              />
-            </label>
-            <button className="button secondary" type="submit">
-              修改密码
-            </button>
-          </form>
+          {runtime.auth_mode === "password" ? (
+            <form className="panel" onSubmit={changePassword}>
+              <h2>密码安全</h2>
+              <label className="field">
+                <span className="label">当前密码</span>
+                <input
+                  className="input"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="label">新密码</span>
+                <input
+                  className="input"
+                  type="password"
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                />
+              </label>
+              <button className="button secondary" type="submit">
+                修改密码
+              </button>
+            </form>
+          ) : null}
 
           <form className="stack" onSubmit={saveSettings}>
           <section className="panel">
@@ -276,14 +306,6 @@ export default function SettingsPage() {
                 onChange={(event) => updateField("ai_chat_model", event.target.value)}
               />
             </label>
-            <label className="field">
-              <span className="label">Embedding 模型</span>
-              <input
-                className="input"
-                value={settings.ai_embedding_model}
-                onChange={(event) => updateField("ai_embedding_model", event.target.value)}
-              />
-            </label>
             <div className="detail-actions">
               <button className="button" type="submit">
                 保存设置
@@ -295,9 +317,28 @@ export default function SettingsPage() {
           </section>
 
           <section className="panel">
+            <h2>语义索引</h2>
+            {embeddingStatus ? (
+              <div className="field">
+                <span className="label">{embeddingStatus.model}</span>
+                <span className="asset-sub">
+                  {embeddingStatus.indexed_assets} / {embeddingStatus.total_assets} 个素材 · {embeddingStatus.dimensions} 维
+                </span>
+              </div>
+            ) : null}
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => void rebuildEmbeddingIndex()}
+            >
+              更新语义索引
+            </button>
+          </section>
+
+          <section className="panel">
             <h2>数据库备份</h2>
             <p className="asset-sub">
-              备份会复制当前 SQLite 数据库文件，保留素材索引、标签、项目和设置。
+              备份会生成 PostgreSQL 自定义格式归档，保留素材索引、向量、标签、项目和设置。
             </p>
             <div className="detail-actions">
               <button className="button secondary" type="button" onClick={() => void backupDatabase()}>

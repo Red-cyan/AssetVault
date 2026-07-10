@@ -2,13 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.app import models  # noqa: F401
 from backend.app.api.v1 import (
     ai,
     assets,
     auth,
     folders,
     projects,
+    runtime,
     search,
     stats,
     tags,
@@ -18,16 +18,10 @@ from backend.app.api.v1 import (
 )
 from backend.app.api.v1 import settings as settings_api
 from backend.app.core.config import get_settings
-from backend.app.db.base import Base
-from backend.app.db.session import engine
-from backend.app.services.schema_service import ensure_runtime_schema
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    Base.metadata.create_all(bind=engine)
-    ensure_runtime_schema(engine)
-
     app = FastAPI(title=settings.app_name)
     app.add_middleware(
         CORSMiddleware,
@@ -38,6 +32,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(auth.router, prefix=settings.api_v1_prefix)
+    app.include_router(runtime.router, prefix=settings.api_v1_prefix)
     app.include_router(users.router, prefix=settings.api_v1_prefix)
     app.include_router(folders.router, prefix=settings.api_v1_prefix)
     app.include_router(assets.router, prefix=settings.api_v1_prefix)

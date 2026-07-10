@@ -27,7 +27,6 @@ class Tag(Base):
 
 class AssetTag(Base):
     __tablename__ = "asset_tags"
-    __table_args__ = (UniqueConstraint("asset_id", "tag_id", name="uq_asset_tags_pair"),)
 
     asset_id: Mapped[str] = mapped_column(ForeignKey("assets.id"), primary_key=True)
     tag_id: Mapped[str] = mapped_column(ForeignKey("tags.id"), primary_key=True)

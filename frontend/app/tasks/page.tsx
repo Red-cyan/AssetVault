@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { RotateCcw, XCircle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch, getToken, Task } from "@/lib/api";
+import { apiFetch, Task } from "@/lib/api";
 
 const STATUS_LABELS: Record<Task["status"], string> = {
   pending: "等待中",
@@ -26,7 +26,6 @@ function formatObject(value: Record<string, unknown> | null) {
 }
 
 export default function TasksPage() {
-  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,17 +39,40 @@ export default function TasksPage() {
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
     void loadTasks();
-  }, [router]);
+  }, []);
 
   const runningCount = useMemo(
     () => tasks.filter((task) => task.status === "pending" || task.status === "running").length,
     [tasks],
   );
+
+  useEffect(() => {
+    if (runningCount === 0) return;
+    const timer = window.setInterval(() => void loadTasks(), 1800);
+    return () => window.clearInterval(timer);
+  }, [runningCount]);
+
+  async function cancelTask(task: Task) {
+    if (!window.confirm("取消这个任务？已完成的文件不会回滚。")) return;
+    setError(null);
+    try {
+      await apiFetch<Task>(`/tasks/${task.id}/cancel`, { method: "POST" });
+      await loadTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "取消任务失败");
+    }
+  }
+
+  async function retryTask(task: Task) {
+    setError(null);
+    try {
+      await apiFetch<Task>(`/tasks/${task.id}/retry`, { method: "POST" });
+      await loadTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "重新执行任务失败");
+    }
+  }
 
   return (
     <AppShell>
@@ -98,8 +120,32 @@ export default function TasksPage() {
                 <strong>{task.type}</strong>
                 <span className="asset-sub">{task.message || task.id}</span>
               </span>
-              <span className={`status-pill status-${task.status}`}>
-                {STATUS_LABELS[task.status] ?? task.status}
+              <span>
+                <span className={`status-pill status-${task.status}`}>
+                  {STATUS_LABELS[task.status] ?? task.status}
+                </span>
+                <span className="detail-actions">
+                  {task.status === "pending" || task.status === "running" ? (
+                    <button
+                      className="button secondary"
+                      onClick={() => void cancelTask(task)}
+                      title="取消任务"
+                    >
+                      <XCircle size={16} />
+                    </button>
+                  ) : null}
+                  {task.type === "scan" &&
+                  task.status !== "pending" &&
+                  task.status !== "running" ? (
+                    <button
+                      className="button secondary"
+                      onClick={() => void retryTask(task)}
+                      title="重新执行"
+                    >
+                      <RotateCcw size={16} />
+                    </button>
+                  ) : null}
+                </span>
               </span>
               <span>
                 {task.progress}% · {task.processed}/{task.total}

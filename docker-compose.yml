@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: assetvault-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-assetvault}
+      POSTGRES_USER: ${POSTGRES_USER:-assetvault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-assetvault}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - assetvault-postgres:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   backend:
     build:
       context: .
@@ -6,15 +24,23 @@ services:
     container_name: assetvault-backend
     environment:
       ASSETVAULT_SECRET_KEY: ${ASSETVAULT_SECRET_KEY:-change-me-for-local-compose}
-      ASSETVAULT_DATABASE_URL: sqlite:////app/data/assetvault.db
+      ASSETVAULT_AUTH_MODE: ${ASSETVAULT_AUTH_MODE:-local}
+      ASSETVAULT_LOCAL_USER_ID: ${ASSETVAULT_LOCAL_USER_ID:-}
+      ASSETVAULT_DATABASE_URL: postgresql+psycopg://assetvault:assetvault@postgres:5432/assetvault
       ASSETVAULT_THUMBNAIL_DIR: /app/cache/thumbnails
+      ASSETVAULT_EMBEDDING_MODEL: BAAI/bge-m3
+      ASSETVAULT_MODEL_CACHE_DIR: /app/models
+      HF_HOME: /app/models
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - assetvault-data:/app/data
       - assetvault-cache:/app/cache
       - assetvault-backups:/app/backups
+      - ${ASSETVAULT_MODEL_CACHE:-./cache/models}:/app/models
       - ${ASSETVAULT_ASSET_ROOT:-./demo-assets}:/assets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
@@ -26,9 +52,9 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
 volumes:
-  assetvault-data:
+  assetvault-postgres:
   assetvault-cache:
   assetvault-backups:

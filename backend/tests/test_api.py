@@ -1,29 +1,43 @@
+import os
 from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.security import hash_password
 from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
-from backend.app.models import Asset, AssetTag, Folder, Tag, Task
-from backend.app.services.ai_analysis_service import AnalysisResult
+from backend.app.models import Asset, AssetTag, Folder, Tag, Task, User
+from backend.app.services.ai_analysis_service import AiAnalysisError, AnalysisResult
 from backend.app.services.asset_scanner import scan_folder
+from backend.app.services.embedding_service import index_user_assets
 from backend.app.services.file_type_service import get_asset_type
+
+TEST_DATABASE_URL = os.getenv(
+    "ASSETVAULT_TEST_DATABASE_URL",
+    "postgresql+psycopg://assetvault:assetvault@127.0.0.1:5432/assetvault_test",
+)
+
+
+def set_auth_settings(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
+    monkeypatch.setattr("backend.app.api.deps.get_settings", lambda: settings)
+    monkeypatch.setattr("backend.app.api.v1.auth.get_settings", lambda: settings)
+    monkeypatch.setattr("backend.app.api.v1.runtime.get_settings", lambda: settings)
 
 
 @pytest.fixture()
-def client() -> Generator[TestClient]:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+def client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+    set_auth_settings(monkeypatch, get_settings().model_copy(update={"auth_mode": "password"}))
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
     def override_get_db() -> Generator[Session]:
@@ -37,6 +51,36 @@ def client() -> Generator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.fixture()
+def local_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[tuple[TestClient, Settings]]:
+    settings = get_settings().model_copy(update={"auth_mode": "local", "local_user_id": None})
+    set_auth_settings(monkeypatch, settings)
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    def override_get_db() -> Generator[Session]:
+        db = testing_session_local()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client, settings
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
 def register_and_login(client: TestClient) -> dict[str, str]:
@@ -51,6 +95,88 @@ def register_and_login(client: TestClient) -> dict[str, str]:
     assert response.status_code == 200
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_runtime_reports_password_mode(client: TestClient) -> None:
+    response = client.get("/api/v1/runtime")
+    assert response.status_code == 200
+    assert response.json() == {
+        "auth_mode": "password",
+        "authentication_required": True,
+    }
+
+
+def test_local_mode_creates_workspace_and_disables_password_auth(
+    local_client: tuple[TestClient, Settings],
+) -> None:
+    client, _ = local_client
+    assert client.get("/api/v1/runtime").json() == {
+        "auth_mode": "local",
+        "authentication_required": False,
+    }
+
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    assert response.json()["username"] == "local"
+    assert client.get("/api/v1/stats/overview").status_code == 200
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "local", "password": "irrelevant"},
+    )
+    register = client.post(
+        "/api/v1/auth/register",
+        json={"username": "another", "password": "assetvault"},
+    )
+    assert login.status_code == 403
+    assert register.status_code == 403
+
+
+def test_local_mode_reuses_only_existing_user(
+    local_client: tuple[TestClient, Settings],
+) -> None:
+    client, _ = local_client
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user = User(
+            username="demo",
+            display_name="Demo",
+            password_hash=hash_password("assetvault"),
+        )
+        db.add(user)
+        db.commit()
+        expected_id = user.id
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    assert response.json()["id"] == expected_id
+    assert response.json()["username"] == "demo"
+
+
+def test_local_mode_requires_selection_for_multiple_users(
+    local_client: tuple[TestClient, Settings],
+) -> None:
+    client, settings = local_client
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        first = User(username="first", password_hash=hash_password("first-password"))
+        second = User(username="second", password_hash=hash_password("second-password"))
+        db.add_all([first, second])
+        db.commit()
+        selected_id = second.id
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 503
+    assert "ASSETVAULT_LOCAL_USER_ID" in response.json()["detail"]
+
+    settings.local_user_id = selected_id
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    assert response.json()["id"] == selected_id
 
 
 def test_auth_and_stats_overview(client: TestClient) -> None:
@@ -355,7 +481,7 @@ def test_settings_can_be_updated(client: TestClient) -> None:
 
 
 
-def test_database_backup_rejects_memory_database(
+def test_database_backup_rejects_non_postgres_database(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -367,7 +493,7 @@ def test_database_backup_rejects_memory_database(
     monkeypatch.setattr("backend.app.services.backup_service.get_settings", lambda: FakeSettings())
     response = client.post("/api/v1/settings/backup-database", headers=headers)
     assert response.status_code == 400
-    assert "内存数据库无法备份" in response.json()["detail"]
+    assert "仅支持 PostgreSQL" in response.json()["detail"]
 
 
 def test_ai_analysis_generates_tags_and_description(client: TestClient) -> None:
@@ -396,8 +522,21 @@ def test_ai_analysis_generates_tags_and_description(client: TestClient) -> None:
     data = response.json()
     assert data["source"] == "local-heuristic"
     assert "舞台" in data["tags"]
-    assert data["asset"]["description"]
-    assert any(tag["name"] == "舞台" for tag in data["asset"]["tags"])
+    assert data["asset"]["description"] is None
+    assert data["asset"]["tags"] == []
+
+    response = client.post(
+        f"/api/v1/ai/assets/{asset_id}/apply",
+        headers=headers,
+        json={
+            "tags": data["tags"],
+            "description": data["description"],
+            "source": data["source"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["asset"]["description"]
+    assert any(tag["name"] == "舞台" for tag in response.json()["asset"]["tags"])
 
 
 def test_ai_analysis_uses_openai_compatible_when_configured(
@@ -451,7 +590,53 @@ def test_ai_analysis_uses_openai_compatible_when_configured(
     assert data["source"] == "openai-compatible"
     assert data["description"] == "这是一个蓝发动漫人物参考图。"
     assert data["tags"] == ["人物", "蓝发", "动漫"]
-    assert any(tag["name"] == "蓝发" for tag in data["asset"]["tags"])
+    assert data["asset"]["tags"] == []
+
+
+def test_ai_analysis_does_not_fall_back_when_configured_model_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = register_and_login(client)
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset = Asset(
+            user_id=user_id,
+            name="stage.glb",
+            stem="stage",
+            extension="glb",
+            asset_type="model",
+            path="E:/assets/stage.glb",
+            size_bytes=1024,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = asset.id
+    finally:
+        db.close()
+
+    client.patch(
+        "/api/v1/settings",
+        headers=headers,
+        json={"ai_api_key": "sk-test"},
+    )
+
+    def fail_ai_call(settings: dict, asset: Asset) -> AnalysisResult:
+        raise AiAnalysisError("AI request failed: rate limited")
+
+    monkeypatch.setattr(
+        "backend.app.services.ai_analysis_service.call_openai_compatible",
+        fail_ai_call,
+    )
+    response = client.post(f"/api/v1/ai/assets/{asset_id}/analyze", headers=headers)
+    assert response.status_code == 502
+    assert "rate limited" in response.json()["detail"]
+
+    response = client.get(f"/api/v1/assets/{asset_id}", headers=headers)
+    assert response.json()["description"] is None
+    assert response.json()["tags"] == []
 
 
 def test_natural_language_search_returns_semantic_matches(client: TestClient) -> None:
@@ -485,6 +670,92 @@ def test_natural_language_search_returns_semantic_matches(client: TestClient) ->
     assert data["total"] >= 1
     assert data["items"][0]["name"] == "concert_stage.glb"
     assert "舞台" in data["interpreted_keywords"]
+
+
+def test_pgvector_index_hybrid_search_and_similar_assets(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = register_and_login(client)
+
+    def fake_encode(texts: list[str]) -> list[list[float]]:
+        result = []
+        for value in texts:
+            vector = [0.0] * 1024
+            if "舞台" in value or "演出空间" in value:
+                vector[0] = 1.0
+            else:
+                vector[1] = 1.0
+            result.append(vector)
+        return result
+
+    monkeypatch.setattr("backend.app.services.embedding_service.encode_texts", fake_encode)
+    monkeypatch.setattr("backend.app.services.search_service.encode_texts", fake_encode)
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        stage = Asset(
+            user_id=user_id,
+            name="main.glb",
+            stem="main",
+            extension="glb",
+            asset_type="model",
+            path="E:/assets/main.glb",
+            description="大型未来舞台，带有 LED 屏幕",
+            size_bytes=2048,
+        )
+        character = Asset(
+            user_id=user_id,
+            name="hero.pmx",
+            stem="hero",
+            extension="pmx",
+            asset_type="model",
+            path="E:/assets/hero.pmx",
+            description="动漫人物角色",
+            size_bytes=1024,
+        )
+        task = Task(user_id=user_id, type="embedding", status="pending")
+        db.add_all([stage, character, task])
+        db.commit()
+        db.refresh(stage)
+        db.refresh(character)
+        db.refresh(task)
+
+        index_user_assets(db, task_id=task.id, user_id=user_id)
+        db.refresh(task)
+        assert task.status == "success"
+        assert task.result["indexed"] == 2
+        stage_id = stage.id
+
+        second_task = Task(user_id=user_id, type="embedding", status="pending")
+        db.add(second_task)
+        db.commit()
+        db.refresh(second_task)
+        index_user_assets(db, task_id=second_task.id, user_id=user_id)
+        db.refresh(second_task)
+        assert second_task.result["indexed"] == 0
+        assert second_task.result["skipped"] == 2
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/v1/search/natural-language",
+        headers=headers,
+        json={"query": "未来演出空间", "limit": 10},
+    )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "hybrid-bge-m3"
+    assert response.json()["items"][0]["id"] == stage_id
+
+    response = client.get("/api/v1/search/embeddings/status", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["indexed_assets"] == 2
+    assert response.json()["dimensions"] == 1024
+
+    response = client.get(f"/api/v1/search/similar/{stage_id}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
 
 
 def test_duplicate_detection_groups_same_content_files(
@@ -903,6 +1174,138 @@ def test_folder_scan_marks_missing_and_restores_assets(
         assert rescan_task.result["missing_marked"] == 1
     finally:
         db.close()
+
+
+def test_folder_rescan_skips_hash_and_thumbnail_for_unchanged_file(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = register_and_login(client)
+    source = tmp_path / "poster.png"
+    source.write_bytes(b"not-a-real-image")
+    calls = {"hash": 0, "thumbnail": 0}
+
+    def fake_hash(_path: Path) -> str:
+        calls["hash"] += 1
+        return "fingerprint"
+
+    def fake_thumbnail(_asset_id: str, _path: Path) -> str:
+        calls["thumbnail"] += 1
+        return str(tmp_path / "thumbnail.jpg")
+
+    monkeypatch.setattr("backend.app.services.asset_scanner.calculate_file_fingerprint", fake_hash)
+    monkeypatch.setattr(
+        "backend.app.services.asset_scanner.generate_image_thumbnail", fake_thumbnail
+    )
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        folder = Folder(user_id=user_id, name="demo", path=str(tmp_path))
+        first_task = Task(user_id=user_id, type="scan", status="pending")
+        db.add_all([folder, first_task])
+        db.commit()
+        db.refresh(folder)
+        db.refresh(first_task)
+
+        scan_folder(db, task_id=first_task.id, user_id=user_id, folder_id=folder.id)
+        assert calls == {"hash": 1, "thumbnail": 1}
+
+        second_task = Task(user_id=user_id, type="scan", status="pending")
+        db.add(second_task)
+        db.commit()
+        db.refresh(second_task)
+        scan_folder(db, task_id=second_task.id, user_id=user_id, folder_id=folder.id)
+        db.refresh(second_task)
+
+        assert calls == {"hash": 1, "thumbnail": 1}
+        assert second_task.result["unchanged"] == 1
+        assert second_task.result["updated"] == 0
+    finally:
+        db.close()
+
+
+def test_folder_scan_records_file_failure_and_continues(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = register_and_login(client)
+    bad_file = tmp_path / "broken.glb"
+    good_file = tmp_path / "stage.glb"
+    bad_file.write_bytes(b"broken")
+    good_file.write_bytes(b"stage")
+
+    def sometimes_fails(path: Path) -> str:
+        if path == bad_file:
+            raise OSError("file became unavailable")
+        return "fingerprint"
+
+    monkeypatch.setattr(
+        "backend.app.services.asset_scanner.calculate_file_fingerprint", sometimes_fails
+    )
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        folder = Folder(user_id=user_id, name="demo", path=str(tmp_path))
+        task = Task(user_id=user_id, type="scan", status="pending")
+        db.add_all([folder, task])
+        db.commit()
+        db.refresh(folder)
+        db.refresh(task)
+
+        scan_folder(db, task_id=task.id, user_id=user_id, folder_id=folder.id)
+        db.refresh(task)
+
+        assert task.status == "success"
+        assert task.result["imported"] == 1
+        assert task.result["failed"] == 1
+        assert task.result["failures"][0]["path"] == str(bad_file)
+        assert task.result["failures"][0]["retry_count"] == 1
+    finally:
+        db.close()
+
+
+def test_scan_task_conflict_cancel_and_retry(client: TestClient, tmp_path: Path) -> None:
+    headers = register_and_login(client)
+    source = tmp_path / "stage.glb"
+    source.write_bytes(b"stage")
+    response = client.post(
+        "/api/v1/folders",
+        headers=headers,
+        json={"path": str(tmp_path), "name": "Demo Folder"},
+    )
+    folder_id = response.json()["id"]
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        running_task = Task(
+            user_id=user_id,
+            type="scan",
+            status="running",
+            payload={"folder_id": folder_id, "path": str(tmp_path)},
+        )
+        db.add(running_task)
+        db.commit()
+        db.refresh(running_task)
+        task_id = running_task.id
+    finally:
+        db.close()
+
+    response = client.post(f"/api/v1/folders/{folder_id}/scan", headers=headers)
+    assert response.status_code == 409
+
+    response = client.post(f"/api/v1/tasks/{task_id}/cancel", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "canceled"
+
+    response = client.post(f"/api/v1/tasks/{task_id}/retry", headers=headers)
+    assert response.status_code == 202
+    assert response.json()["status"] == "pending"
+    assert response.json()["payload"]["retry_of"] == task_id
 
 
 def test_delete_folder_keeps_asset_index(client: TestClient, tmp_path: Path) -> None:

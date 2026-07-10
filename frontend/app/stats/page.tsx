@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch, getToken, StatsOverview } from "@/lib/api";
+import { apiFetch, StatsOverview } from "@/lib/api";
 
 function formatSize(value: number) {
   if (value < 1024) return `${value} B`;
@@ -18,19 +17,14 @@ function formatNumber(value: number) {
 }
 
 export default function StatsPage() {
-  const router = useRouter();
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
     apiFetch<StatsOverview>("/stats/overview")
       .then(setStats)
       .catch((err) => setError(err instanceof Error ? err.message : "加载统计失败"));
-  }, [router]);
+  }, []);
 
   const maxTypeCount = useMemo(
     () => Math.max(...(stats?.type_stats.map((item) => item.count) ?? [1])),

@@ -1,14 +1,28 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, setToken } from "@/lib/api";
+import { apiFetch, clearToken, getRuntimeInfo, setToken } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("demo");
   const [password, setPassword] = useState("assetvault");
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    void getRuntimeInfo()
+      .then((runtime) => {
+        if (runtime.auth_mode === "local") {
+          clearToken();
+          router.replace("/library");
+          return;
+        }
+        setReady(true);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "无法读取运行模式"));
+  }, [router]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -36,6 +50,8 @@ export default function LoginPage() {
       setError(err instanceof Error ? err.message : "登录失败");
     }
   }
+
+  if (!ready) return <div className="auth-page"><p className="asset-sub">正在连接工作区...</p></div>;
 
   return (
     <div className="auth-page">

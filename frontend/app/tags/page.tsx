@@ -1,9 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch, getToken, Tag } from "@/lib/api";
+import { apiFetch, Tag } from "@/lib/api";
 
 type EditableTag = Tag & {
   draftName: string;
@@ -21,7 +20,6 @@ function toEditable(tag: Tag): EditableTag {
 }
 
 export default function TagsPage() {
-  const router = useRouter();
   const [tags, setTags] = useState<EditableTag[]>([]);
   const [name, setName] = useState("");
   const [color, setColor] = useState(DEFAULT_COLORS[0]);
@@ -34,12 +32,8 @@ export default function TagsPage() {
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
     void loadTags().catch((err) => setError(err instanceof Error ? err.message : "加载标签失败"));
-  }, [router]);
+  }, []);
 
   async function createTag(event: FormEvent) {
     event.preventDefault();

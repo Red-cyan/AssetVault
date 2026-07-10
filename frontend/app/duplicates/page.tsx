@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch, DuplicateAssetResponse, getToken } from "@/lib/api";
+import { apiFetch, DuplicateAssetResponse } from "@/lib/api";
 
 function formatSize(value: number) {
   if (value < 1024) return `${value} B`;
@@ -13,7 +12,6 @@ function formatSize(value: number) {
 }
 
 export default function DuplicatesPage() {
-  const router = useRouter();
   const [data, setData] = useState<DuplicateAssetResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,12 +29,8 @@ export default function DuplicatesPage() {
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
     void loadDuplicates();
-  }, [router]);
+  }, []);
 
   return (
     <AppShell>

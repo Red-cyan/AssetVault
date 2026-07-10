@@ -9,7 +9,6 @@ class SettingsRead(BaseModel):
     ai_base_url: str
     ai_api_key_configured: bool
     ai_chat_model: str
-    ai_embedding_model: str
     thumbnail_quality: int
 
 
@@ -19,7 +18,6 @@ class SettingsUpdate(BaseModel):
     ai_base_url: str | None = None
     ai_api_key: str | None = None
     ai_chat_model: str | None = None
-    ai_embedding_model: str | None = None
     thumbnail_quality: int | None = Field(default=None, ge=40, le=95)
 
 

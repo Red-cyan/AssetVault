@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -17,6 +18,12 @@ class AnalysisResult:
     tags: list[str]
     description: str
     source: str
+    model: str | None = None
+    elapsed_ms: int = 0
+
+
+class AiAnalysisError(RuntimeError):
+    pass
 
 TYPE_TAGS = {
     "image": ["图片", "视觉参考"],
@@ -132,22 +139,28 @@ def chat_completions_url(base_url: str) -> str:
     return f"{normalized}/chat/completions"
 
 
-def parse_ai_content(content: str) -> AnalysisResult | None:
+def parse_ai_content(content: str, *, model: str, elapsed_ms: int) -> AnalysisResult:
     try:
         data = json.loads(content)
-    except json.JSONDecodeError:
-        return None
+    except json.JSONDecodeError as error:
+        raise AiAnalysisError("AI returned invalid JSON") from error
 
     raw_tags = data.get("tags")
     description = data.get("description")
     if not isinstance(raw_tags, list) or not isinstance(description, str):
-        return None
+        raise AiAnalysisError("AI response is missing tags or description")
 
     tags = deduplicate([item for item in raw_tags if isinstance(item, str)])[:10]
     description = description.strip()
     if not tags or not description:
-        return None
-    return AnalysisResult(tags=tags, description=description, source="openai-compatible")
+        raise AiAnalysisError("AI response contains empty tags or description")
+    return AnalysisResult(
+        tags=tags,
+        description=description,
+        source="openai-compatible",
+        model=model,
+        elapsed_ms=elapsed_ms,
+    )
 
 
 def call_openai_compatible(settings: dict[str, Any], asset: Asset) -> AnalysisResult | None:
@@ -178,33 +191,42 @@ def call_openai_compatible(settings: dict[str, Any], asset: Asset) -> AnalysisRe
         },
         method="POST",
     )
+    started_at = perf_counter()
     try:
         with urlopen(request, timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, URLError, TimeoutError, json.JSONDecodeError):
-        return None
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise AiAnalysisError(f"AI request failed: {error}") from error
+    elapsed_ms = round((perf_counter() - started_at) * 1000)
 
     try:
         content = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        return None
+    except (KeyError, IndexError, TypeError) as error:
+        raise AiAnalysisError("AI response has an unsupported structure") from error
     if not isinstance(content, str):
-        return None
-    return parse_ai_content(content)
+        raise AiAnalysisError("AI response content is not text")
+    return parse_ai_content(content, model=model, elapsed_ms=elapsed_ms)
 
 
-def apply_ai_analysis(db: Session, *, asset: Asset) -> AnalysisResult:
+def generate_ai_analysis(db: Session, *, asset: Asset) -> AnalysisResult:
     settings = get_user_settings(db, user_id=asset.user_id)
-    result = call_openai_compatible(settings, asset) or build_local_analysis(asset)
-    tags = result.tags
-    description = result.description
-    asset.description = description
+    if not str(settings.get("ai_api_key") or "").strip():
+        return build_local_analysis(asset)
+    result = call_openai_compatible(settings, asset)
+    if result is None:
+        raise AiAnalysisError("AI configuration is incomplete")
+    return result
+
+
+def apply_analysis_result(db: Session, *, asset: Asset, result: AnalysisResult) -> None:
+    asset.description = result.description
 
     existing_tag_ids = {link.tag_id for link in asset.tags}
-    for name in tags:
+    for name in result.tags:
         tag = db.scalar(select(Tag).where(Tag.user_id == asset.user_id, Tag.name == name))
         if tag is None:
-            tag = Tag(user_id=asset.user_id, name=name, source="ai")
+            tag_source = "ai" if result.source == "openai-compatible" else "rule"
+            tag = Tag(user_id=asset.user_id, name=name, source=tag_source)
             db.add(tag)
             db.flush()
         if tag.id not in existing_tag_ids:
@@ -212,4 +234,3 @@ def apply_ai_analysis(db: Session, *, asset: Asset) -> AnalysisResult:
             existing_tag_ids.add(tag.id)
 
     db.commit()
-    return result

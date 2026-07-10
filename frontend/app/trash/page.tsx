@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch, Asset, AssetList, getToken, TrashSummary } from "@/lib/api";
+import { apiFetch, Asset, AssetList, TrashSummary } from "@/lib/api";
 
 function formatSize(value: number) {
   if (value < 1024) return `${value} B`;
@@ -18,7 +17,6 @@ function formatDate(value: string | null) {
 }
 
 export default function TrashPage() {
-  const router = useRouter();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,12 +27,8 @@ export default function TrashPage() {
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
     void loadTrash().catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
-  }, [router]);
+  }, []);
 
   async function restore(assetId: string) {
     setMessage(null);

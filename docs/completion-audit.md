@@ -48,15 +48,15 @@
 
 | 能力 | 状态 | 当前证据 | 说明 |
 | --- | --- | --- | --- |
-| AI 自动标签 | 已完成 | `ai_analysis_service.py`、设置页 AI 配置 | 支持 OpenAI Compatible 调用，失败时回退本地规则 |
-| AI 自动描述 | 已完成 | `ai_analysis_service.py`、设置页 AI 配置 | 支持 OpenAI Compatible 调用，失败时回退本地规则 |
-| AI 自然语言搜索 | 部分完成 | `search_service.py` | 当前为本地语义规则，不是真 Embedding |
-| AI 相似素材推荐 | 未完成 | 无 | 后续可基于标签/Embedding 实现 |
+| AI 自动标签 | 已完成 | `ai_analysis_service.py`、设置页 AI 配置 | 生成建议并标明远端模型或本地规则来源，确认后写入 |
+| AI 自动描述 | 已完成 | `ai_analysis_service.py`、设置页 AI 配置 | 远端失败明确报错，不静默降级 |
+| AI 自然语言搜索 | 已完成 | `embedding_service.py`、`search_service.py` | BGE-M3 + pgvector 向量检索与关键词 RRF 融合 |
+| AI 相似素材推荐 | 已完成 | `GET /search/similar/{asset_id}` | 使用 pgvector cosine distance 返回近邻素材 |
 | AI 智能分类 | 部分完成 | AI 标签和规则分析 | 当前能生成类别标签，但不是独立分类服务 |
 
 面试表达建议：
 
-> 当前 AI 标签和描述支持 OpenAI Compatible API，并保留本地规则 fallback，保证没有 Key 或网络失败时仍可演示。自然语言搜索仍是本地语义规则，后续可升级为 Embedding 或 CLIP 检索。
+> 当前 AI 标签和描述采用建议确认流程并明确来源；语义搜索使用 BAAI/bge-m3 生成 1024 维向量，通过 PostgreSQL pgvector HNSW 与关键词结果进行 RRF 融合。
 
 ## 4. 第三阶段高级功能审计
 

@@ -129,8 +129,14 @@ export type AppSettings = {
   ai_base_url: string;
   ai_api_key_configured: boolean;
   ai_chat_model: string;
-  ai_embedding_model: string;
   thumbnail_quality: number;
+};
+
+export type EmbeddingIndexStatus = {
+  indexed_assets: number;
+  total_assets: number;
+  model: string;
+  dimensions: number;
 };
 
 export type UserProfile = {
@@ -141,6 +147,13 @@ export type UserProfile = {
   is_active: boolean;
   created_at: string;
 };
+
+export type RuntimeInfo = {
+  auth_mode: "local" | "password";
+  authentication_required: boolean;
+};
+
+let runtimeInfoPromise: Promise<RuntimeInfo> | null = null;
 
 export type AiConnectionTestResult = {
   configured: boolean;
@@ -157,7 +170,9 @@ export type AiAnalyzeResult = {
   asset: AssetDetail;
   tags: string[];
   description: string;
-  source: string;
+  source: "openai-compatible" | "local-heuristic";
+  model: string | null;
+  elapsed_ms: number;
 };
 
 export type NaturalLanguageSearchResult = {
@@ -207,6 +222,21 @@ export function clearToken() {
   window.localStorage.removeItem("assetvault_token");
 }
 
+export function getRuntimeInfo(): Promise<RuntimeInfo> {
+  if (!runtimeInfoPromise) {
+    runtimeInfoPromise = fetch(`${API_BASE}/runtime`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error((await response.text()) || response.statusText);
+        return response.json() as Promise<RuntimeInfo>;
+      })
+      .catch((error) => {
+        runtimeInfoPromise = null;
+        throw error;
+      });
+  }
+  return runtimeInfoPromise;
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const response = await fetch(`${API_BASE}${path}`, {
@@ -217,9 +247,21 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       ...init.headers,
     },
   });
+  if (response.status === 401) {
+    clearToken();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("assetvault:unauthorized"));
+    }
+  }
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || response.statusText);
+    try {
+      const payload = JSON.parse(text) as { detail?: string };
+      throw new Error(payload.detail || text || response.statusText);
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new Error(text || response.statusText);
+      throw error;
+    }
   }
   if (response.status === 204) {
     return undefined as T;

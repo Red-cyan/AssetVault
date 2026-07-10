@@ -9,7 +9,6 @@ DEFAULT_SETTINGS = {
     "ai_base_url": "https://api.openai.com/v1",
     "ai_api_key": "",
     "ai_chat_model": "gpt-4o-mini",
-    "ai_embedding_model": "text-embedding-3-small",
     "thumbnail_quality": 82,
 }
 
@@ -43,6 +42,5 @@ def public_settings(values: dict) -> dict:
         "ai_base_url": values["ai_base_url"],
         "ai_api_key_configured": bool(values.get("ai_api_key")),
         "ai_chat_model": values["ai_chat_model"],
-        "ai_embedding_model": values["ai_embedding_model"],
         "thumbnail_quality": values["thumbnail_quality"],
     }

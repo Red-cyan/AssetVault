@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import {
   API_BASE,
@@ -10,10 +9,7 @@ import {
   AssetDetail,
   AssetFolderGroup,
   AssetList,
-  Folder,
-  getToken,
   Tag,
-  Task,
   AssetCleanupResult,
   AssetBatchUpdateResult,
   AiAnalyzeResult,
@@ -25,6 +21,20 @@ import {
 type ViewMode = "grid" | "list";
 type SortBy = "name" | "size_bytes" | "file_modified_at" | "asset_type" | "last_opened_at";
 type AssetScope = "primary" | "support" | "all";
+
+type LibraryPreferences = {
+  query: string;
+  assetType: string;
+  assetScope: AssetScope;
+  directoryPath: string;
+  tagId: string;
+  favoriteOnly: boolean;
+  sortBy: SortBy;
+  pageSize: number;
+  viewMode: ViewMode;
+};
+
+const LIBRARY_PREFERENCES_KEY = "assetvault_library_preferences";
 
 const ROLE_OPTIONS = [
   ["character", "人物"],
@@ -59,13 +69,10 @@ function thumbnailSrc(asset: Asset | AssetDetail) {
 }
 
 export default function LibraryPage() {
-  const router = useRouter();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [folderGroups, setFolderGroups] = useState<AssetFolderGroup[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<AssetDetail | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -80,7 +87,6 @@ export default function LibraryPage() {
   const [pageSize, setPageSize] = useState(60);
   const [total, setTotal] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [folderPath, setFolderPath] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [bulkTagInput, setBulkTagInput] = useState("");
   const [bulkProjectId, setBulkProjectId] = useState("");
@@ -90,11 +96,10 @@ export default function LibraryPage() {
   const [rating, setRating] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const activeTask = useMemo(
-    () => tasks.find((task) => task.status === "pending" || task.status === "running"),
-    [tasks],
-  );
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<AiAnalyzeResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiController, setAiController] = useState<AbortController | null>(null);
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -102,22 +107,26 @@ export default function LibraryPage() {
   async function loadAssets(
     nextPage = page,
     nextPageSize = pageSize,
-    overrides: Partial<{ assetScope: AssetScope; assetType: string; directoryPath: string }> = {},
+    overrides: Partial<LibraryPreferences> = {},
   ) {
     const nextAssetScope = overrides.assetScope ?? assetScope;
     const nextAssetType = overrides.assetType ?? assetType;
     const nextDirectoryPath = overrides.directoryPath ?? directoryPath;
+    const nextQuery = overrides.query ?? query;
+    const nextTagId = overrides.tagId ?? tagId;
+    const nextFavoriteOnly = overrides.favoriteOnly ?? favoriteOnly;
+    const nextSortBy = overrides.sortBy ?? sortBy;
     const params = new URLSearchParams();
-    if (query) params.set("q", query);
+    if (nextQuery) params.set("q", nextQuery);
     if (nextAssetType) params.set("type", nextAssetType);
     params.set("scope", nextAssetScope);
     if (nextDirectoryPath) params.set("directory_path", nextDirectoryPath);
-    if (tagId) params.set("tag_id", tagId);
-    if (favoriteOnly) params.set("favorite", "true");
+    if (nextTagId) params.set("tag_id", nextTagId);
+    if (nextFavoriteOnly) params.set("favorite", "true");
     params.set("page", String(nextPage));
     params.set("page_size", String(nextPageSize));
-    params.set("sort_by", sortBy);
-    params.set("sort_order", sortBy === "name" ? "asc" : "desc");
+    params.set("sort_by", nextSortBy);
+    params.set("sort_order", nextSortBy === "name" ? "asc" : "desc");
     const result = await apiFetch<AssetList>(`/assets?${params.toString()}`);
     setAssets(result.items);
     setPage(result.page);
@@ -139,15 +148,11 @@ export default function LibraryPage() {
       setPageSize(60);
       setTotal(result.total);
       setMessage(
-        `AI 搜索返回 ${result.total} 个候选，关键词：${result.interpreted_keywords.join("、")}`,
+        `${result.mode === "hybrid-bge-m3" ? "BGE-M3 混合检索" : "关键词检索"}返回 ${result.total} 个候选。`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI 搜索失败");
     }
-  }
-
-  async function loadFolders() {
-    setFolders(await apiFetch<Folder[]>("/folders"));
   }
 
   async function loadFolderGroups() {
@@ -156,10 +161,6 @@ export default function LibraryPage() {
     setDirectoryPath((current) =>
       current && result.some((group) => group.path === current) ? current : "",
     );
-  }
-
-  async function loadTasks() {
-    setTasks(await apiFetch<Task[]>("/tasks"));
   }
 
   async function loadTags() {
@@ -176,31 +177,57 @@ export default function LibraryPage() {
     await Promise.all([
       loadAssets(),
       loadFolderGroups(),
-      loadFolders(),
-      loadTasks(),
       loadTags(),
       loadProjects(),
     ]);
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
+    const rawPreferences = window.localStorage.getItem(LIBRARY_PREFERENCES_KEY);
+    let preferences: LibraryPreferences | null = null;
+    if (rawPreferences) {
+      try {
+        preferences = JSON.parse(rawPreferences) as LibraryPreferences;
+      } catch {
+        window.localStorage.removeItem(LIBRARY_PREFERENCES_KEY);
+      }
     }
-    void loadAll().catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
+    if (preferences) {
+      setQuery(preferences.query ?? "");
+      setAssetType(preferences.assetType ?? "");
+      setAssetScope(preferences.assetScope ?? "primary");
+      setDirectoryPath(preferences.directoryPath ?? "");
+      setTagId(preferences.tagId ?? "");
+      setFavoriteOnly(Boolean(preferences.favoriteOnly));
+      setSortBy(preferences.sortBy ?? "file_modified_at");
+      setPageSize(preferences.pageSize ?? 60);
+      setViewMode(preferences.viewMode ?? "grid");
+    }
+    setPreferencesReady(true);
+    void Promise.all([
+      loadAssets(1, preferences?.pageSize ?? 60, preferences ?? {}),
+      loadFolderGroups(),
+      loadTags(),
+      loadProjects(),
+    ]).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
   }, []);
 
   useEffect(() => {
-    if (!activeTask) return;
-    const timer = window.setInterval(async () => {
-      await loadTasks();
-      await loadFolderGroups();
-      await loadAssets();
-    }, 1800);
-    return () => window.clearInterval(timer);
+    if (!preferencesReady) return;
+    const preferences: LibraryPreferences = {
+      query,
+      assetType,
+      assetScope,
+      directoryPath,
+      tagId,
+      favoriteOnly,
+      sortBy,
+      pageSize,
+      viewMode,
+    };
+    window.localStorage.setItem(LIBRARY_PREFERENCES_KEY, JSON.stringify(preferences));
   }, [
-    activeTask,
+    preferencesReady,
     query,
     assetType,
     assetScope,
@@ -208,8 +235,8 @@ export default function LibraryPage() {
     tagId,
     favoriteOnly,
     sortBy,
-    page,
     pageSize,
+    viewMode,
   ]);
 
   useEffect(() => {
@@ -219,53 +246,9 @@ export default function LibraryPage() {
     setRating(selected.rating ?? 0);
   }, [selected]);
 
-  async function addFolder(event: FormEvent) {
-    event.preventDefault();
-    setMessage(null);
-    setError(null);
-    try {
-      const folder = await apiFetch<Folder>("/folders", {
-        method: "POST",
-        body: JSON.stringify({ path: folderPath }),
-      });
-      setFolderPath("");
-      await loadFolders();
-      await apiFetch<Task>(`/folders/${folder.id}/scan`, { method: "POST" });
-      await loadTasks();
-      await loadFolderGroups();
-      setMessage("扫描任务已创建，素材列表会自动刷新。");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "添加目录失败");
-    }
-  }
-
-  async function scanFolder(folderId: string) {
-    setMessage(null);
-    setError(null);
-    try {
-      await apiFetch<Task>(`/folders/${folderId}/scan`, { method: "POST" });
-      await loadTasks();
-      await loadFolderGroups();
-      setMessage("扫描任务已创建。");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "扫描失败");
-    }
-  }
-
-  async function deleteFolder(folderId: string) {
-    setMessage(null);
-    setError(null);
-    try {
-      await apiFetch<void>(`/folders/${folderId}`, { method: "DELETE" });
-      await loadFolders();
-      await loadFolderGroups();
-      setMessage("素材目录配置已移除，原始文件和已有素材索引不会被删除。");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "移除目录失败");
-    }
-  }
-
   async function selectAsset(asset: Asset) {
+    aiController?.abort();
+    setAiSuggestion(null);
     const detail = await apiFetch<AssetDetail>(`/assets/${asset.id}`);
     setSelected(detail);
     await apiFetch(`/assets/${asset.id}/open`, { method: "POST" });
@@ -319,6 +302,18 @@ export default function LibraryPage() {
       setError("请先选择素材。");
       return;
     }
+    if (
+      payload.move_to_trash &&
+      !window.confirm(`将选中的 ${selectedIds.length} 个素材移入回收站？`)
+    ) {
+      return;
+    }
+    if (
+      payload.tag_names?.length &&
+      !window.confirm(`为选中的 ${selectedIds.length} 个素材添加这些标签？`)
+    ) {
+      return;
+    }
     setMessage(null);
     setError(null);
     try {
@@ -363,6 +358,7 @@ export default function LibraryPage() {
       setError("请先创建或选择项目。");
       return;
     }
+    if (!window.confirm(`将选中的 ${selectedIds.length} 个素材加入项目？`)) return;
     setMessage(null);
     setError(null);
     try {
@@ -397,6 +393,7 @@ export default function LibraryPage() {
   }
 
   async function cleanupAssets() {
+    if (!window.confirm("清理排除目录和失效路径的素材索引？此操作不会删除原始文件。")) return;
     setMessage(null);
     setError(null);
     try {
@@ -432,24 +429,56 @@ export default function LibraryPage() {
 
   async function analyzeAsset() {
     if (!selected) return;
+    const controller = new AbortController();
+    setAiController(controller);
+    setAiLoading(true);
+    setAiSuggestion(null);
     setMessage(null);
     setError(null);
     try {
       const result = await apiFetch<AiAnalyzeResult>(`/ai/assets/${selected.id}/analyze`, {
         method: "POST",
+        signal: controller.signal,
+      });
+      setAiSuggestion(result);
+      setMessage("分析建议已生成，确认后才会写入素材详情和标签。");
+    } catch (err) {
+      if (controller.signal.aborted) {
+        setMessage("已取消本次分析请求。");
+      } else {
+        setError(err instanceof Error ? err.message : "智能分析失败");
+      }
+    } finally {
+      setAiLoading(false);
+      setAiController(null);
+    }
+  }
+
+  async function applyAiSuggestion() {
+    if (!selected || !aiSuggestion) return;
+    setError(null);
+    try {
+      const result = await apiFetch<AiAnalyzeResult>(`/ai/assets/${selected.id}/apply`, {
+        method: "POST",
+        body: JSON.stringify({
+          tags: aiSuggestion.tags,
+          description: aiSuggestion.description,
+          source: aiSuggestion.source,
+        }),
       });
       setSelected(result.asset);
       setDescription(result.asset.description ?? "");
-      await loadTags();
-      await loadAssets();
-      setMessage(`智能分析完成：已生成 ${result.tags.length} 个标签。`);
+      setAiSuggestion(null);
+      await Promise.all([loadTags(), loadAssets()]);
+      setMessage(`已应用 ${result.tags.length} 个建议标签。`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "智能分析失败");
+      setError(err instanceof Error ? err.message : "应用分析建议失败");
     }
   }
 
   async function moveToTrash() {
     if (!selected) return;
+    if (!window.confirm(`将“${selected.name}”移入回收站？`)) return;
     setMessage(null);
     setError(null);
     try {
@@ -647,18 +676,6 @@ export default function LibraryPage() {
         </button>
       </div>
 
-      <form className="toolbar" onSubmit={addFolder}>
-        <input
-          className="input"
-          placeholder="输入本地素材目录，例如 E:\\Assets"
-          value={folderPath}
-          onChange={(event) => setFolderPath(event.target.value)}
-        />
-        <button className="button secondary" type="submit">
-          添加并扫描
-        </button>
-      </form>
-
       {message ? <p className="asset-sub">{message}</p> : null}
       {error ? <p className="asset-sub">{error}</p> : null}
 
@@ -766,7 +783,14 @@ export default function LibraryPage() {
             <>
               <div className="section-title">
                 <h2>{selected.name}</h2>
-                <button className="button ghost" onClick={() => setSelected(null)}>
+                <button
+                  className="button ghost"
+                  onClick={() => {
+                    aiController?.abort();
+                    setAiSuggestion(null);
+                    setSelected(null);
+                  }}
+                >
                   关闭
                 </button>
               </div>
@@ -777,9 +801,15 @@ export default function LibraryPage() {
                 <button className="button secondary" onClick={toggleFavorite}>
                   {selected.is_favorite ? "取消收藏" : "收藏"}
                 </button>
-                <button className="button secondary" onClick={analyzeAsset}>
-                  智能分析
-                </button>
+                {aiLoading ? (
+                  <button className="button secondary" onClick={() => aiController?.abort()}>
+                    取消分析
+                  </button>
+                ) : (
+                  <button className="button secondary" onClick={analyzeAsset}>
+                    智能分析
+                  </button>
+                )}
                 <button className="button" onClick={saveDetails}>
                   保存详情
                 </button>
@@ -787,6 +817,33 @@ export default function LibraryPage() {
                   移入回收站
                 </button>
               </div>
+              {aiSuggestion ? (
+                <div className="field">
+                  <span className="label">
+                    分析建议 · {aiSuggestion.source === "openai-compatible" ? "远端模型" : "本地规则"}
+                  </span>
+                  <span className="asset-sub">
+                    {aiSuggestion.model ? `${aiSuggestion.model} · ` : ""}
+                    {aiSuggestion.elapsed_ms > 0 ? `${aiSuggestion.elapsed_ms} ms` : "无需网络调用"}
+                  </span>
+                  <p>{aiSuggestion.description}</p>
+                  <div className="tag-row">
+                    {aiSuggestion.tags.map((tag) => (
+                      <span className="tag" key={tag}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="detail-actions">
+                    <button className="button" onClick={() => void applyAiSuggestion()}>
+                      应用建议
+                    </button>
+                    <button className="button secondary" onClick={() => setAiSuggestion(null)}>
+                      放弃
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <label className="field">
                 <span className="label">评分</span>
                 <select
@@ -856,44 +913,7 @@ export default function LibraryPage() {
                 </button>
               </form>
             </>
-          ) : (
-            <>
-              <h2>任务与目录</h2>
-              {activeTask ? (
-                <div className="task-item">
-                  <strong>{activeTask.type}</strong>
-                  <div className="asset-sub">
-                    {activeTask.status} · {activeTask.progress}% · {activeTask.processed}/
-                    {activeTask.total}
-                  </div>
-                </div>
-              ) : (
-                <p className="asset-sub">当前没有运行中的任务。</p>
-              )}
-              <div className="field">
-                <span className="label">素材目录</span>
-                <div className="folder-list">
-                  {folders.map((folder) => (
-                    <div className="folder-item" key={folder.id}>
-                      <div className="asset-name">{folder.name}</div>
-                      <div className="asset-sub">{folder.path}</div>
-                      <div className="detail-actions">
-                        <button className="button secondary" onClick={() => scanFolder(folder.id)}>
-                          重新扫描
-                        </button>
-                        <button
-                          className="button secondary"
-                          onClick={() => void deleteFolder(folder.id)}
-                        >
-                          移除目录
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+          ) : null}
         </aside>
       </div>
     </AppShell>

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -29,7 +29,6 @@ class Project(Base):
 
 class ProjectAsset(Base):
     __tablename__ = "project_assets"
-    __table_args__ = (UniqueConstraint("project_id", "asset_id", name="uq_project_assets_pair"),)
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), primary_key=True)
     asset_id: Mapped[str] = mapped_column(ForeignKey("assets.id"), primary_key=True)

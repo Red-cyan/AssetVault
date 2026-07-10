@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   apiFetch,
   Asset,
   AssetList,
-  getToken,
   MissingAssetScanResult,
   TrashSummary,
 } from "@/lib/api";
@@ -25,7 +23,6 @@ function formatDate(value: string | null) {
 }
 
 export default function MissingPage() {
-  const router = useRouter();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [lastScan, setLastScan] = useState<MissingAssetScanResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -37,12 +34,8 @@ export default function MissingPage() {
   }
 
   useEffect(() => {
-    if (!getToken()) {
-      router.push("/login");
-      return;
-    }
     void loadMissing().catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
-  }, [router]);
+  }, []);
 
   async function scanMissing() {
     setMessage(null);

@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.models import Asset, AssetTag, Tag
+from backend.app.core.config import get_settings
+from backend.app.models import Asset, AssetEmbedding, AssetTag
+from backend.app.services.embedding_service import encode_texts
 
 
 @dataclass(frozen=True)
@@ -114,42 +116,103 @@ def natural_language_search(
     user_id: str,
     query: str,
     limit: int,
-) -> tuple[list[Asset], int, list[str]]:
+) -> tuple[list[Asset], int, list[str], str]:
     interpreted = interpret_query(query)
-    patterns = [f"%{keyword}%" for keyword in interpreted.keywords]
-
-    stmt = (
+    assets = list(
+        db.scalars(
         select(Asset)
         .options(selectinload(Asset.tags).selectinload(AssetTag.tag))
-        .outerjoin(AssetTag, AssetTag.asset_id == Asset.id)
-        .outerjoin(Tag, Tag.id == AssetTag.tag_id)
         .where(Asset.user_id == user_id, Asset.is_deleted.is_(False))
+        ).unique()
     )
 
-    conditions = []
-    for pattern in patterns:
-        conditions.append(Asset.name.ilike(pattern))
-        conditions.append(Asset.path.ilike(pattern))
-        conditions.append(Asset.description.ilike(pattern))
-        conditions.append(Asset.extension.ilike(pattern))
-        conditions.append(Tag.name.ilike(pattern))
-    if interpreted.asset_types:
-        conditions.append(Asset.asset_type.in_(interpreted.asset_types))
-    if conditions:
-        stmt = stmt.where(or_(*conditions))
-
-    candidates = list(db.scalars(stmt.distinct()).unique())
-    scored = [
+    keyword_scored = [
         (asset, score_asset(asset, interpreted.keywords, interpreted.asset_types))
-        for asset in candidates
+        for asset in assets
     ]
-    scored = [(asset, score) for asset, score in scored if score > 0]
-    scored.sort(
+    keyword_scored = [(asset, score) for asset, score in keyword_scored if score > 0]
+    keyword_scored.sort(
         key=lambda item: (
             item[1],
             item[0].file_modified_at or item[0].indexed_at,
         ),
         reverse=True,
     )
-    items = [asset for asset, _score in scored[:limit]]
-    return items, len(scored), interpreted.keywords
+    settings = get_settings()
+    embedding_count = db.scalar(
+        select(func.count(AssetEmbedding.asset_id)).where(
+            AssetEmbedding.user_id == user_id,
+            AssetEmbedding.model == settings.embedding_model,
+        )
+    ) or 0
+    if embedding_count == 0:
+        items = [asset for asset, _score in keyword_scored[:limit]]
+        return items, len(keyword_scored), interpreted.keywords, "keyword"
+
+    query_vector = encode_texts([query])[0]
+    distance = AssetEmbedding.embedding.cosine_distance(query_vector)
+    vector_rows = list(
+        db.execute(
+            select(AssetEmbedding.asset_id, distance.label("distance"))
+            .where(
+                AssetEmbedding.user_id == user_id,
+                AssetEmbedding.model == settings.embedding_model,
+            )
+            .order_by(distance)
+            .limit(max(limit * 4, 100))
+        )
+    )
+
+    keyword_ranks = {asset.id: rank for rank, (asset, _score) in enumerate(keyword_scored, 1)}
+    vector_ranks = {asset_id: rank for rank, (asset_id, _distance) in enumerate(vector_rows, 1)}
+    asset_by_id = {asset.id: asset for asset in assets}
+    candidate_ids = set(keyword_ranks) | set(vector_ranks)
+
+    def reciprocal_rank(asset_id: str) -> float:
+        keyword_score = 1 / (60 + keyword_ranks[asset_id]) if asset_id in keyword_ranks else 0
+        vector_score = 1 / (60 + vector_ranks[asset_id]) if asset_id in vector_ranks else 0
+        return keyword_score * 0.45 + vector_score * 0.55
+
+    ranked_ids = sorted(candidate_ids, key=reciprocal_rank, reverse=True)
+    items = [asset_by_id[asset_id] for asset_id in ranked_ids[:limit] if asset_id in asset_by_id]
+    return items, len(candidate_ids), interpreted.keywords, "hybrid-bge-m3"
+
+
+def find_similar_assets(
+    db: Session,
+    *,
+    user_id: str,
+    asset_id: str,
+    limit: int,
+) -> list[Asset] | None:
+    settings = get_settings()
+    source = db.get(AssetEmbedding, asset_id)
+    if source is None or source.user_id != user_id or source.model != settings.embedding_model:
+        return None
+
+    distance = AssetEmbedding.embedding.cosine_distance(source.embedding)
+    similar_ids = list(
+        db.scalars(
+            select(AssetEmbedding.asset_id)
+            .join(Asset, Asset.id == AssetEmbedding.asset_id)
+            .where(
+                AssetEmbedding.user_id == user_id,
+                AssetEmbedding.model == settings.embedding_model,
+                AssetEmbedding.asset_id != asset_id,
+                Asset.is_deleted.is_(False),
+            )
+            .order_by(distance)
+            .limit(limit)
+        )
+    )
+    if not similar_ids:
+        return []
+    assets = list(
+        db.scalars(
+            select(Asset)
+            .options(selectinload(Asset.tags).selectinload(AssetTag.tag))
+            .where(Asset.id.in_(similar_ids))
+        ).unique()
+    )
+    asset_by_id = {asset.id: asset for asset in assets}
+    return [asset_by_id[item_id] for item_id in similar_ids if item_id in asset_by_id]
