@@ -44,6 +44,8 @@ TYPE_HINTS = {
     "vmd": "motion",
     "ue": "ue",
     "uasset": "ue",
+    "uproject": "project",
+    "casc": "opaque",
 }
 
 
@@ -91,6 +93,7 @@ def score_asset(asset: Asset, keywords: list[str], asset_types: list[str]) -> in
             asset.name or "",
             asset.path or "",
             asset.description or "",
+            asset.extracted_text or "",
             asset.author or "",
             asset.extension or "",
             asset.asset_type or "",
@@ -171,7 +174,7 @@ def natural_language_search(
     def reciprocal_rank(asset_id: str) -> float:
         keyword_score = 1 / (60 + keyword_ranks[asset_id]) if asset_id in keyword_ranks else 0
         vector_score = 1 / (60 + vector_ranks[asset_id]) if asset_id in vector_ranks else 0
-        return keyword_score * 0.45 + vector_score * 0.55
+        return keyword_score * 0.60 + vector_score * 0.40
 
     ranked_ids = sorted(candidate_ids, key=reciprocal_rank, reverse=True)
     items = [asset_by_id[asset_id] for asset_id in ranked_ids[:limit] if asset_id in asset_by_id]

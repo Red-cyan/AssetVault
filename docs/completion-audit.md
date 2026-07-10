@@ -53,7 +53,7 @@
 | AI 自然语言搜索 | 已完成 | `embedding_service.py`、`search_service.py` | BGE-M3 + pgvector 向量检索与关键词 RRF 融合 |
 | AI 相似素材推荐 | 已完成 | `GET /search/similar/{asset_id}` | 使用 pgvector cosine distance 返回近邻素材 |
 | AI 智能分类 | 部分完成 | AI 标签和规则分析 | 当前能生成类别标签，但不是独立分类服务 |
-| 异构格式解析 | 基础框架已完成 | `asset_extractor.py`、资产详情 | PMX、VMD、FBX、Blend、UProject 使用独立提取器；不透明文件仅保留元数据 |
+| 异构格式解析 | 已完成第二阶段 | `asset_extractor.py`、资产详情 | 支持 PMX、VMD、OBJ、FBX、glTF/GLB、Blend、UProject；OBJ/glTF 可检查外部依赖 |
 
 面试表达建议：
 

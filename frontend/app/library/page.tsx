@@ -52,9 +52,16 @@ const EXTRACTION_STATUS_LABELS: Record<Asset["extraction_status"], string> = {
 };
 
 function formatMetadataValue(value: unknown) {
-  if (Array.isArray(value)) return value.join("、") || "-";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "-";
+    const visible = value.slice(0, 12).map(String).join("、");
+    return value.length > 12 ? `${visible} 等 ${value.length} 项` : visible;
+  }
   if (value === null || value === undefined || value === "") return "-";
-  if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "object") {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 300 ? `${serialized.slice(0, 300)}...` : serialized;
+  }
   return String(value);
 }
 

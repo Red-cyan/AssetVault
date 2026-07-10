@@ -715,8 +715,21 @@ def test_pgvector_index_hybrid_search_and_similar_assets(
             description="动漫人物角色",
             size_bytes=1024,
         )
+        motion = Asset(
+            user_id=user_id,
+            name="motion.vmd",
+            stem="motion",
+            extension="vmd",
+            asset_type="motion",
+            path="E:/assets/motion.vmd",
+            extracted_text="Miku Center Smile",
+            extractor_name="vmd-structure-v2",
+            extraction_status="structured",
+            semantic_eligible=False,
+            size_bytes=512,
+        )
         task = Task(user_id=user_id, type="embedding", status="pending")
-        db.add_all([stage, character, task])
+        db.add_all([stage, character, motion, task])
         db.commit()
         db.refresh(stage)
         db.refresh(character)
@@ -726,6 +739,7 @@ def test_pgvector_index_hybrid_search_and_similar_assets(
         db.refresh(task)
         assert task.status == "success"
         assert task.result["indexed"] == 2
+        assert task.result["ineligible"] == 1
         stage_id = stage.id
 
         second_task = Task(user_id=user_id, type="embedding", status="pending")
@@ -736,6 +750,7 @@ def test_pgvector_index_hybrid_search_and_similar_assets(
         db.refresh(second_task)
         assert second_task.result["indexed"] == 0
         assert second_task.result["skipped"] == 2
+        assert second_task.result["ineligible"] == 1
     finally:
         db.close()
 
@@ -748,9 +763,20 @@ def test_pgvector_index_hybrid_search_and_similar_assets(
     assert response.json()["mode"] == "hybrid-bge-m3"
     assert response.json()["items"][0]["id"] == stage_id
 
+    response = client.post(
+        "/api/v1/search/natural-language",
+        headers=headers,
+        json={"query": "Center", "limit": 10},
+    )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "hybrid-bge-m3"
+    assert response.json()["items"][0]["name"] == "motion.vmd"
+
     response = client.get("/api/v1/search/embeddings/status", headers=headers)
     assert response.status_code == 200
     assert response.json()["indexed_assets"] == 2
+    assert response.json()["eligible_assets"] == 2
+    assert response.json()["total_assets"] == 3
     assert response.json()["dimensions"] == 1024
 
     response = client.get(f"/api/v1/search/similar/{stage_id}", headers=headers)
@@ -961,6 +987,18 @@ def test_asset_list_defaults_to_primary_scope(client: TestClient) -> None:
                     path="E:/assets/character/textures/body_diffuse.png",
                     size_bytes=2048,
                 ),
+                Asset(
+                    user_id=user_id,
+                    name="Concert.uproject",
+                    stem="Concert",
+                    extension="uproject",
+                    asset_type="project",
+                    path="E:/assets/Concert/Concert.uproject",
+                    size_bytes=256,
+                    extracted_text="Concert Niagara ControlRig",
+                    extractor_name="uproject-json",
+                    extraction_status="structured",
+                ),
             ]
         )
         db.commit()
@@ -970,8 +1008,12 @@ def test_asset_list_defaults_to_primary_scope(client: TestClient) -> None:
     response = client.get("/api/v1/assets", headers=headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["total"] == 2
-    assert {item["name"] for item in data["items"]} == {"character.pmx", "dance.vmd"}
+    assert data["total"] == 3
+    assert {item["name"] for item in data["items"]} == {
+        "character.pmx",
+        "dance.vmd",
+        "Concert.uproject",
+    }
 
     response = client.get("/api/v1/assets?scope=support", headers=headers)
     assert response.status_code == 200
@@ -981,7 +1023,21 @@ def test_asset_list_defaults_to_primary_scope(client: TestClient) -> None:
 
     response = client.get("/api/v1/assets?scope=all", headers=headers)
     assert response.status_code == 200
-    assert response.json()["total"] == 3
+    assert response.json()["total"] == 4
+
+    response = client.get("/api/v1/assets?q=Niagara", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["name"] == "Concert.uproject"
+
+    response = client.post(
+        "/api/v1/search/natural-language",
+        headers=headers,
+        json={"query": "Niagara", "limit": 10},
+    )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "keyword"
+    assert response.json()["items"][0]["name"] == "Concert.uproject"
 
     response = client.get("/api/v1/assets?scope=primary&type=image", headers=headers)
     assert response.status_code == 200
@@ -1257,7 +1313,7 @@ def test_folder_rescan_backfills_new_extractor_without_rehashing(
 
         asset = db.scalar(select(Asset).where(Asset.path == str(source.resolve())))
         assert asset is not None
-        asset.extractor_name = "generic"
+        asset.extractor_name = "uproject-json-v0"
         asset.extraction_status = "metadata_only"
         asset.extracted_metadata = {}
         asset.extracted_text = None

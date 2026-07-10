@@ -9,7 +9,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.models import Asset, AssetTag, Folder, Task
-from backend.app.services.asset_extractor import extract_asset_metadata, has_format_extractor
+from backend.app.services.asset_extractor import (
+    extract_asset_metadata,
+    get_format_extractor_name,
+)
 from backend.app.services.file_type_service import get_asset_type
 from backend.app.services.hash_service import calculate_file_fingerprint
 from backend.app.services.thumbnail_service import (
@@ -140,8 +143,9 @@ def _index_file(
     asset.exists_on_disk = True
     asset.missing_since = None
     if unchanged:
-        needs_extraction = asset.extraction_status == "failed" or (
-            asset.extractor_name == "generic" and has_format_extractor(path)
+        expected_extractor = get_format_extractor_name(path)
+        needs_extraction = expected_extractor is not None and (
+            asset.extraction_status == "failed" or asset.extractor_name != expected_extractor
         )
         if needs_extraction:
             _apply_extraction(asset, path)

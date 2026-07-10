@@ -29,7 +29,7 @@ from backend.app.services.missing_asset_service import scan_missing_assets
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
-PRIMARY_ASSET_TYPES = {"model", "motion", "ue"}
+PRIMARY_ASSET_TYPES = {"model", "motion", "ue", "project", "opaque"}
 SUPPORT_ASSET_TYPES = {"image", "video"}
 
 
@@ -139,6 +139,7 @@ def list_assets(
                 Asset.extension.ilike(pattern),
                 Asset.author.ilike(pattern),
                 Asset.description.ilike(pattern),
+                Asset.extracted_text.ilike(pattern),
             )
         )
     if asset_type:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import struct
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -11,7 +12,7 @@ DEMO_FILES = {
     "characters/mmd_character_sample.pmx": "placeholder",
     "stages/concert_stage_led_screen.png": "image",
     "stages/white_performance_stage.obj": "obj",
-    "motions/dance_motion_pop.vmd": "placeholder",
+    "motions/dance_motion_pop.vmd": "vmd",
     "textures/fabric_blue_pattern.png": "image",
     "hdr/concert_hall_light_probe.hdr": "placeholder",
     "ue/ue5_stage_prop.uasset": "placeholder",
@@ -87,6 +88,23 @@ def create_uproject(path: Path) -> None:
     )
 
 
+def create_vmd(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    signature = b"Vocaloid Motion Data 0002".ljust(30, b"\x00")
+    model_name = b"AssetVault Demo".ljust(20, b"\x00")
+    bone_frame = b"Center".ljust(15, b"\x00") + struct.pack("<I", 90) + bytes(92)
+    morph_frame = b"Smile".ljust(15, b"\x00") + struct.pack("<If", 120, 1.0)
+    path.write_bytes(
+        signature
+        + model_name
+        + struct.pack("<I", 1)
+        + bone_frame
+        + struct.pack("<I", 1)
+        + morph_frame
+        + struct.pack("<I", 0)
+    )
+
+
 def create_demo_assets(output_dir: Path, *, force: bool) -> list[Path]:
     created: list[Path] = []
     image_specs = {
@@ -115,6 +133,8 @@ def create_demo_assets(output_dir: Path, *, force: bool) -> list[Path]:
             create_obj(path)
         elif kind == "uproject":
             create_uproject(path)
+        elif kind == "vmd":
+            create_vmd(path)
         else:
             create_placeholder(path, kind)
         created.append(path)
